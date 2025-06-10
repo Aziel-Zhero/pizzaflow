@@ -1,7 +1,7 @@
 
 "use client";
 import type { FC } from 'react';
-import { Pizza, BarChart3, ListOrdered, PlusCircle, LayoutDashboard, Utensils, Moon, Sun } from 'lucide-react';
+import { Pizza, BarChart3, ListOrdered, PlusCircle, LayoutDashboard, Utensils, Moon, Sun, Ticket } from 'lucide-react';
 import SplitText from '@/components/common/SplitText';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -14,7 +14,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useTheme } from 'next-themes'; // Assuming next-themes is or will be installed
+import { useTheme } from 'next-themes'; 
 
 interface AppHeaderProps {
   appName: string;
@@ -43,7 +43,7 @@ const AppHeader: FC<AppHeaderProps> = ({ appName }) => {
             />
           </Link>
         </div>
-        <nav className="flex items-center gap-2">
+        <nav className="flex items-center gap-2 flex-wrap">
            <Button variant="ghost" size="icon" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label="Toggle theme">
             <Sun className="h-[1.2rem] w-[1.2rem] rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
             <Moon className="absolute h-[1.2rem] w-[1.2rem] rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
@@ -81,6 +81,11 @@ const AppHeader: FC<AppHeaderProps> = ({ appName }) => {
                   <Utensils className="mr-2 h-4 w-4" /> Cardápio
                 </Link>
               </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                 <Link href="/admin/coupons">
+                  <Ticket className="mr-2 h-4 w-4" /> Cupons
+                </Link>
+              </DropdownMenuItem>
               {/* Adicionar mais itens de admin aqui no futuro */}
             </DropdownMenuContent>
           </DropdownMenu>
@@ -91,4 +96,3 @@ const AppHeader: FC<AppHeaderProps> = ({ appName }) => {
 };
 
 export default AppHeader;
-

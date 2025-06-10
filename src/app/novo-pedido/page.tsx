@@ -4,8 +4,8 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import AppHeader from '@/components/pizzaflow/AppHeader';
-import type { MenuItem, OrderItem, PaymentType, CepAddress } from '@/lib/types';
-import { getAvailableMenuItems, addNewOrder, fetchAddressFromCep } from '@/app/actions';
+import type { MenuItem, OrderItem, PaymentType, CepAddress, Coupon } from '@/lib/types';
+import { getAvailableMenuItems, addNewOrder, fetchAddressFromCep, getActiveCouponByCode } from '@/app/actions';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -14,9 +14,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, ShoppingCart, Trash2, PlusCircle, MinusCircle, Send, Search, CreditCard, DollarSign, Smartphone, Edit2, Tag } from 'lucide-react';
+import { Loader2, ShoppingCart, Trash2, PlusCircle, MinusCircle, Send, Search, CreditCard, DollarSign, Smartphone, Edit2, Tag, Ticket, CheckCircle, AlertCircle } from 'lucide-react';
 import SplitText from '@/components/common/SplitText';
 import Image from 'next/image';
+import { Badge } from '@/components/ui/badge';
 
 const PIZZERIA_NAME = "Pizzaria Planeta";
 
@@ -24,6 +25,7 @@ interface CartItem extends OrderItem {
   imageUrl?: string;
   dataAiHint?: string;
   isPromotion?: boolean;
+  menuItemId: string; // Adicionado para garantir que temos o ID do item do cardápio original
 }
 
 export default function NewOrderPage() {
@@ -39,12 +41,17 @@ export default function NewOrderPage() {
   const [customerAddress, setCustomerAddress] = useState('');
   const [customerReferencePoint, setCustomerReferencePoint] = useState('');
   const [paymentType, setPaymentType] = useState<PaymentType | ''>('');
-  const [generalNotes, setGeneralNotes] = useState(''); // Renamed from notes to generalNotes
+  const [generalNotes, setGeneralNotes] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
 
   const [isItemNotesModalOpen, setIsItemNotesModalOpen] = useState(false);
   const [editingCartItemIndex, setEditingCartItemIndex] = useState<number | null>(null);
   const [currentItemNote, setCurrentItemNote] = useState('');
+
+  const [couponCode, setCouponCode] = useState('');
+  const [appliedCoupon, setAppliedCoupon] = useState<Coupon | null>(null);
+  const [couponMessage, setCouponMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [isVerifyingCoupon, setIsVerifyingCoupon] = useState(false);
 
 
   useEffect(() => {
@@ -89,36 +96,43 @@ export default function NewOrderPage() {
 
   const addToCart = (item: MenuItem) => {
     setCart(prevCart => {
-      const existingItemIndex = prevCart.findIndex(cartItem => cartItem.id === item.id);
+      const existingItemIndex = prevCart.findIndex(cartItem => cartItem.menuItemId === item.id);
       if (existingItemIndex > -1) {
         const newCart = [...prevCart];
         newCart[existingItemIndex].quantity += 1;
         return newCart;
       }
       return [...prevCart, { 
-        id: item.id, 
+        id: `cart_${item.id}_${Date.now()}`, // Temporary client-side ID for cart item
+        menuItemId: item.id, // Store original menu item ID
         name: item.name, 
         price: item.price, 
         quantity: 1, 
         imageUrl: item.imageUrl, 
         dataAiHint: item.dataAiHint,
         isPromotion: item.isPromotion,
-        itemNotes: '' // Initialize itemNotes
+        itemNotes: '' 
       }];
     });
+    setAppliedCoupon(null); // Reset coupon if cart changes
+    setCouponMessage(null);
   };
 
-  const updateQuantity = (itemId: string, change: number) => {
+  const updateQuantity = (cartItemId: string, change: number) => {
     setCart(prevCart => {
       const updatedCart = prevCart.map(item =>
-        item.id === itemId ? { ...item, quantity: Math.max(1, item.quantity + change) } : item
+        item.id === cartItemId ? { ...item, quantity: Math.max(1, item.quantity + change) } : item
       );
       return updatedCart.filter(item => item.quantity > 0);
     });
+    setAppliedCoupon(null); 
+    setCouponMessage(null);
   };
   
-  const removeFromCart = (itemId: string) => {
-    setCart(prevCart => prevCart.filter(item => item.id !== itemId));
+  const removeFromCart = (cartItemId: string) => {
+    setCart(prevCart => prevCart.filter(item => item.id !== cartItemId));
+    setAppliedCoupon(null); 
+    setCouponMessage(null);
   };
 
   const openItemNotesModal = (index: number) => {
@@ -138,8 +152,48 @@ export default function NewOrderPage() {
     setCurrentItemNote('');
   };
 
+  const subtotalCartAmount = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  let discountAmount = 0;
+  if (appliedCoupon) {
+    if (appliedCoupon.discountType === "PERCENTAGE") {
+      discountAmount = subtotalCartAmount * (appliedCoupon.discountValue / 100);
+    } else if (appliedCoupon.discountType === "FIXED_AMOUNT") {
+      discountAmount = appliedCoupon.discountValue;
+    }
+    discountAmount = Math.min(discountAmount, subtotalCartAmount); // Discount cannot exceed subtotal
+  }
+  const totalCartAmount = subtotalCartAmount - discountAmount;
 
-  const totalCartAmount = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+
+  const handleVerifyCoupon = async () => {
+    if (!couponCode.trim()) {
+        setCouponMessage({ type: 'error', text: 'Por favor, insira um código de cupom.' });
+        return;
+    }
+    setIsVerifyingCoupon(true);
+    setCouponMessage(null);
+    try {
+        const coupon = await getActiveCouponByCode(couponCode);
+        if (coupon) {
+            if (coupon.minOrderAmount && subtotalCartAmount < coupon.minOrderAmount) {
+                 setAppliedCoupon(null);
+                 setCouponMessage({ type: 'error', text: `Este cupom requer um pedido mínimo de R$ ${coupon.minOrderAmount.toFixed(2).replace('.', ',')}.` });
+            } else {
+                setAppliedCoupon(coupon);
+                setCouponMessage({ type: 'success', text: `Cupom "${coupon.code}" aplicado! ${coupon.description || ''}` });
+            }
+        } else {
+            setAppliedCoupon(null);
+            setCouponMessage({ type: 'error', text: 'Cupom inválido, expirado ou não encontrado.' });
+        }
+    } catch (error) {
+        setAppliedCoupon(null);
+        setCouponMessage({ type: 'error', text: 'Erro ao verificar o cupom. Tente novamente.' });
+    } finally {
+        setIsVerifyingCoupon(false);
+    }
+  };
+
 
   const handleSubmitOrder = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -158,23 +212,40 @@ export default function NewOrderPage() {
 
     setIsSubmitting(true);
     try {
+      // Re-verify coupon just before submitting, in case cart changed or coupon expired
+      let finalCouponCode = undefined;
+      if (appliedCoupon && couponCode === appliedCoupon.code) { // Check if current couponCode still matches the applied one
+        const freshCoupon = await getActiveCouponByCode(appliedCoupon.code);
+        if (freshCoupon && (!freshCoupon.minOrderAmount || subtotalCartAmount >= freshCoupon.minOrderAmount)) {
+            finalCouponCode = freshCoupon.code;
+        } else {
+            // Coupon became invalid, inform user and proceed without it
+            toast({ title: "Cupom Inválido", description: "O cupom aplicado não é mais válido para este carrinho. Pedido será enviado sem desconto.", variant: "default" });
+            setAppliedCoupon(null);
+            setCouponMessage(null);
+        }
+      }
+
+
       const orderData: NewOrderClientData = {
         customerName,
         customerAddress,
         customerCep,
         customerReferencePoint,
         items: cart.map(ci => ({ 
-            id: ci.id, 
+            id: ci.id, // This will be ignored by backend, backend creates its own OrderItem ID
+            menuItemId: ci.menuItemId,
             name: ci.name, 
             quantity: ci.quantity, 
             price: ci.price,
-            itemNotes: ci.itemNotes // Include item-specific notes
+            itemNotes: ci.itemNotes
         })),
         paymentType,
-        notes: generalNotes, // General order notes
+        notes: generalNotes,
+        couponCode: finalCouponCode,
       };
       const newOrder = await addNewOrder(orderData);
-      toast({ title: "Pedido Enviado!", description: `Seu pedido ${newOrder.id} foi recebido. Acompanhe o status.`, variant: "default" });
+      toast({ title: "Pedido Enviado!", description: `Seu pedido ${newOrder.id} foi recebido.`, variant: "default" });
       router.push(`/pedido/${newOrder.id}/status`); 
       
       setCustomerName('');
@@ -184,6 +255,9 @@ export default function NewOrderPage() {
       setPaymentType('');
       setGeneralNotes('');
       setCart([]);
+      setCouponCode('');
+      setAppliedCoupon(null);
+      setCouponMessage(null);
     } catch (error) {
       toast({ title: "Erro ao Enviar Pedido", description: "Houve um problema ao registrar seu pedido. Tente novamente.", variant: "destructive" });
     } finally {
@@ -311,9 +385,9 @@ export default function NewOrderPage() {
                 {cart.length === 0 ? (
                   <p className="text-muted-foreground text-center py-4">Seu carrinho está vazio.</p>
                 ) : (
-                  <div className="max-h-[40vh] overflow-y-auto pr-2 space-y-3">
+                  <div className="max-h-[35vh] overflow-y-auto pr-2 space-y-3">
                     {cart.map((item, index) => (
-                      <div key={item.id + index} className="flex flex-col p-2 border rounded-md gap-1">
+                      <div key={item.id} className="flex flex-col p-2 border rounded-md gap-1">
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
                                {item.imageUrl && <Image src={item.imageUrl} alt={item.name} width={40} height={40} className="rounded-sm object-cover" data-ai-hint={item.dataAiHint || "food item"}/>}
@@ -344,13 +418,44 @@ export default function NewOrderPage() {
                   </div>
                 )}
                 {cart.length > 0 && (
-                  <div className="border-t pt-4 mt-4">
+                  <div className="space-y-2 border-t pt-4 mt-4">
+                    <div className="flex justify-between text-sm">
+                      <span>Subtotal:</span>
+                      <span>R$ {subtotalCartAmount.toFixed(2).replace('.', ',')}</span>
+                    </div>
+                    {appliedCoupon && (
+                        <div className="flex justify-between text-sm text-green-600">
+                            <span>Desconto ({appliedCoupon.code}):</span>
+                            <span>- R$ {discountAmount.toFixed(2).replace('.', ',')}</span>
+                        </div>
+                    )}
                     <div className="flex justify-between font-semibold text-lg">
                       <span>Total:</span>
                       <span>R$ {totalCartAmount.toFixed(2).replace('.', ',')}</span>
                     </div>
                   </div>
                 )}
+                <div className="space-y-1">
+                    <Label htmlFor="couponCode">Cupom de Desconto</Label>
+                    <div className="flex gap-2">
+                        <Input 
+                            id="couponCode" 
+                            value={couponCode} 
+                            onChange={e => { setCouponCode(e.target.value); setAppliedCoupon(null); setCouponMessage(null); }}
+                            placeholder="Digite seu cupom"
+                            disabled={cart.length === 0}
+                        />
+                        <Button type="button" onClick={handleVerifyCoupon} disabled={isVerifyingCoupon || cart.length === 0 || !couponCode.trim()} variant="outline">
+                            {isVerifyingCoupon ? <Loader2 className="h-4 w-4 animate-spin" /> : <Ticket className="h-4 w-4"/>}
+                        </Button>
+                    </div>
+                    {couponMessage && (
+                        <p className={`text-xs mt-1 flex items-center ${couponMessage.type === 'success' ? 'text-green-600' : 'text-destructive'}`}>
+                            {couponMessage.type === 'success' ? <CheckCircle className="h-3 w-3 mr-1" /> : <AlertCircle className="h-3 w-3 mr-1" />}
+                            {couponMessage.text}
+                        </p>
+                    )}
+                </div>
                  <div>
                   <Label htmlFor="paymentType">Forma de Pagamento</Label>
                   <Select value={paymentType} onValueChange={(value) => setPaymentType(value as PaymentType)} required>
@@ -359,11 +464,11 @@ export default function NewOrderPage() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="Dinheiro"><div className="flex items-center gap-2"><DollarSign className="h-4 w-4 text-green-600"/> Dinheiro (na entrega/retirada)</div></SelectItem>
-                      <SelectItem value="Cartão"><div className="flex items-center gap-2"><CreditCard className="h-4 w-4 text-blue-600"/> Cartão (na entrega/retirada)</div></SelectItem>
+                      <SelectItem value="Cartao"><div className="flex items-center gap-2"><CreditCard className="h-4 w-4 text-blue-600"/> Cartão (na entrega/retirada)</div></SelectItem>
                       <SelectItem value="Online"><div className="flex items-center gap-2"><Smartphone className="h-4 w-4 text-purple-600"/> PIX (Online - a combinar)</div></SelectItem>
                     </SelectContent>
                   </Select>
-                  {paymentType === 'Cartão' && (
+                  {paymentType === 'Cartao' && (
                     <div className="flex gap-1 mt-2 justify-center">
                         <Image src="https://placehold.co/40x25.png/000000/FFFFFF?text=Visa" alt="Visa" width={40} height={25} data-ai-hint="visa logo" />
                         <Image src="https://placehold.co/40x25.png/E0E0E0/000000?text=Master" alt="Mastercard" width={40} height={25} data-ai-hint="mastercard logo" />
@@ -391,7 +496,7 @@ export default function NewOrderPage() {
         <Dialog open={isItemNotesModalOpen} onOpenChange={setIsItemNotesModalOpen}>
             <DialogContent>
                 <DialogHeader>
-                    <DialogTitle>Observação para o Item</DialogTitle>
+                    <DialogTitle>Observação para o Item: {editingCartItemIndex !== null ? cart[editingCartItemIndex]?.name : ''}</DialogTitle>
                 </DialogHeader>
                 <Textarea 
                     value={currentItemNote} 
@@ -415,4 +520,3 @@ export default function NewOrderPage() {
     </div>
   );
 }
-

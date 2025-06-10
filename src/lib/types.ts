@@ -1,14 +1,32 @@
 
+// Enums from Prisma will be imported or mapped if needed client-side
+// For now, these string unions are fine for client-side logic.
 export type OrderStatus = "Pendente" | "Em Preparo" | "Aguardando Retirada" | "Saiu para Entrega" | "Entregue" | "Cancelado";
-export type PaymentType = "Dinheiro" | "Cartão" | "Online" | ""; // Online pode ser PIX
+export type PaymentType = "Dinheiro" | "Cartao" | "Online" | ""; // Online pode ser PIX. Prisma: Cartão -> Cartao
 export type PaymentStatus = "Pendente" | "Pago";
+export type DiscountType = "PERCENTAGE" | "FIXED_AMOUNT";
+
 
 export interface OrderItem {
-  id: string; // Can be menu item ID
-  name: string;
+  id: string; // This will be the ID of the OrderItem record in DB
+  menuItemId: string; // ID of the MenuItem
+  name: string; // Denormalized from MenuItem for historical accuracy
   quantity: number;
-  price: number; // Price per item at the time of order
-  itemNotes?: string; // Observações específicas para este item
+  price: number; // Price per item at the time of order (Decimal in DB, number in JS)
+  itemNotes?: string;
+}
+
+export interface Coupon {
+  id: string;
+  code: string;
+  description?: string;
+  discountType: DiscountType;
+  discountValue: number; // Decimal in DB, number in JS
+  isActive: boolean;
+  expiresAt?: string; // ISO string
+  usageLimit?: number;
+  timesUsed: number;
+  minOrderAmount?: number;
 }
 
 export interface Order {
@@ -18,36 +36,46 @@ export interface Order {
   customerCep?: string;
   customerReferencePoint?: string;
   items: OrderItem[];
-  totalAmount: number;
+  totalAmount: number; // Decimal in DB, number in JS
   status: OrderStatus;
   createdAt: string; // ISO string for serializability
-  updatedAt?: string; // ISO string, para rastrear a última atualização de status
-  deliveredAt?: string; // ISO string, para quando o pedido foi entregue
-  estimatedDeliveryTime?: string; // ISO string
+  updatedAt?: string;
+  deliveredAt?: string;
+  estimatedDeliveryTime?: string;
   deliveryPerson?: string;
   paymentType?: PaymentType;
   paymentStatus: PaymentStatus;
-  notes?: string; // Observações gerais do pedido
-  optimizedRoute?: string; // Can be a URL or descriptive text
+  notes?: string;
+  optimizedRoute?: string;
+  
+  appliedCouponCode?: string | null;
+  appliedCouponDiscount?: number | null; // Decimal in DB, number in JS
+  couponId?: string | null;
+  coupon?: Coupon | null;
 }
 
 export const PIZZERIA_ADDRESS = "Pizzaria Planeta - Central, Av. Sabores Celestiais 123, Cidade Astral, CA 45678";
 
 export interface DailyRevenue {
-  date: string; // Format: "dd/MM" or a more structured date
-  name: string; // Day name or date string for label
+  date: string; 
+  name: string; 
   Receita: number;
 }
 
 export interface OrdersByStatusData {
-  name: OrderStatus; // Status name
-  value: number; // Count of orders
-  fill: string; // Color for the pie chart segment
+  name: OrderStatus; 
+  value: number; 
+  fill: string; 
 }
 
 export interface TimeEstimateData {
-  averageTimeToDeliveryMinutes?: number; // Em minutos
-  // Futuramente: averagePreparationTimeMinutes?: number;
+  averageTimeToDeliveryMinutes?: number;
+}
+
+export interface CouponUsageData {
+    totalCouponsUsed: number;
+    totalDiscountAmount: number;
+    // Potentially: dailyCouponUsage: { date: string; count: number; totalValue: number }[]
 }
 
 export interface DashboardAnalyticsData {
@@ -57,40 +85,39 @@ export interface DashboardAnalyticsData {
   ordersByStatus: OrdersByStatusData[];
   dailyRevenue: DailyRevenue[];
   timeEstimates: TimeEstimateData;
+  couponUsage?: CouponUsageData;
 }
 
-// For customer order page and menu management
 export interface MenuItem {
   id: string;
   name: string;
-  price: number;
-  category: string; // e.g., "Pizzas Salgadas", "Pizzas Doces", "Bebidas"
+  price: number; // Decimal in DB, number in JS
+  category: string; 
   description?: string;
-  imageUrl?: string; // Optional image URL for the menu item
-  isPromotion?: boolean; // Flag para indicar se o item está em promoção
+  imageUrl?: string;
+  isPromotion?: boolean;
+  dataAiHint?: string;
 }
 
-// Data for submitting a new order from the client page
 export interface NewOrderClientData {
     customerName: string;
     customerAddress: string;
     customerCep?: string;
     customerReferencePoint?: string;
-    items: OrderItem[]; // Agora OrderItem pode ter itemNotes
+    items: OrderItem[]; 
     paymentType: PaymentType;
-    notes?: string; // Observações gerais do pedido
+    notes?: string;
+    couponCode?: string; // Novo campo para cupom
 }
 
-// For CEP API mock response
 export interface CepAddress {
   street: string;
   neighborhood: string;
   city: string;
   state: string;
-  fullAddress?: string; // Combined address for convenience
+  fullAddress?: string; 
 }
 
-// Para o novo fluxo de otimização de múltiplas rotas
 export interface MultiStopOrderInfo {
   orderId: string;
   customerAddress: string;
@@ -102,11 +129,15 @@ export interface OptimizeMultiDeliveryRouteInput {
 }
 
 export interface OptimizedRouteLeg {
-  orderIds: string[]; // Pedidos agrupados nesta perna da rota
-  description: string; // Descrição textual da rota ou trecho
-  googleMapsUrl: string; // URL do Google Maps para esta perna/rota completa
+  orderIds: string[]; 
+  description: string; 
+  googleMapsUrl: string; 
 }
 export interface OptimizeMultiDeliveryRouteOutput {
-  optimizedRoutePlan: OptimizedRouteLeg[]; // Pode ser um plano com múltiplas "pernas" ou uma única rota consolidada
-  summary?: string; // Um resumo geral da otimização
+  optimizedRoutePlan: OptimizedRouteLeg[]; 
+  summary?: string; 
 }
+
+// Para usar com Prisma Client, precisamos do cliente instanciado.
+// Geralmente em um arquivo lib/prisma.ts ou db.ts
+// export { PrismaClient } from '@prisma/client'; -> faremos isso no actions.ts por enquanto ou um lib/db.ts

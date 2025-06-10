@@ -3,12 +3,12 @@
 
 import { useEffect, useState } from 'react';
 import AppHeader from '@/components/pizzaflow/AppHeader';
-import type { DashboardAnalyticsData, DailyRevenue, OrdersByStatusData, OrderStatus } from '@/lib/types';
+import type { DashboardAnalyticsData, OrderStatus } from '@/lib/types'; // Removed unused DailyRevenue, OrdersByStatusData
 import { getDashboardAnalytics, exportOrdersToCSV } from '@/app/actions';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { Loader2, Package, DollarSign, ListChecks, TrendingUp, Download, ClockIcon } from 'lucide-react';
+import { Loader2, Package, DollarSign, ListChecks, TrendingUp, Download, ClockIcon, TicketIcon } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { ChartContainer, ChartTooltipContent } from '@/components/ui/chart';
 import type { ChartConfig } from '@/components/ui/chart';
@@ -17,11 +17,12 @@ import SplitText from '@/components/common/SplitText';
 
 const PIZZERIA_NAME = "Pizzaria Planeta";
 
+// Consistent with enums/types used in actions.ts
 const statusColorsForCharts: Record<OrderStatus, string> = {
   Pendente: "hsl(var(--chart-1))",
-  "Em Preparo": "hsl(var(--chart-2))",
-  "Aguardando Retirada": "hsl(var(--chart-3))",
-  "Saiu para Entrega": "hsl(var(--chart-4))",
+  EmPreparo: "hsl(var(--chart-2))", // Changed from "Em Preparo"
+  AguardandoRetirada: "hsl(var(--chart-3))", // Changed from "Aguardando Retirada"
+  SaiuParaEntrega: "hsl(var(--chart-4))", // Changed from "Saiu para Entrega"
   Entregue: "hsl(var(--chart-5))",
   Cancelado: "hsl(var(--destructive))",
 };
@@ -72,7 +73,7 @@ export default function AnalyticsDashboardPage() {
         toast({ title: "Exportar CSV", description: csvData, variant: "default" });
         return;
       }
-      const blob = new Blob([`\uFEFF${csvData}`], { type: 'text/csv;charset=utf-8;' }); // Add BOM for Excel
+      const blob = new Blob([`\uFEFF${csvData}`], { type: 'text/csv;charset=utf-8;' }); 
       const link = document.createElement("a");
       if (link.download !== undefined) {
         const url = URL.createObjectURL(blob);
@@ -120,7 +121,7 @@ export default function AnalyticsDashboardPage() {
     );
   }
 
-  const formatCurrency = (value: number) => `R$ ${value.toFixed(2).replace('.', ',')}`;
+  const formatCurrency = (value: number | undefined) => `R$ ${(value || 0).toFixed(2).replace('.', ',')}`;
 
   return (
     <div className="flex flex-col min-h-screen bg-background">
@@ -139,7 +140,7 @@ export default function AnalyticsDashboardPage() {
             </Button>
          </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-4 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6 mb-8">
           <Card className="shadow-lg">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Receita Total</CardTitle>
@@ -181,7 +182,17 @@ export default function AnalyticsDashboardPage() {
                     ? `${analyticsData.timeEstimates.averageTimeToDeliveryMinutes} min` 
                     : "N/A"}
                 </div>
-              <p className="text-xs text-muted-foreground">Do pedido à entrega (pedidos entregues)</p>
+              <p className="text-xs text-muted-foreground">Do pedido à entrega (entregues)</p>
+            </CardContent>
+          </Card>
+           <Card className="shadow-lg">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Cupons Usados</CardTitle>
+              <TicketIcon className="h-5 w-5 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{analyticsData.couponUsage?.totalCouponsUsed || 0}</div>
+              <p className="text-xs text-muted-foreground">Total descontado: {formatCurrency(analyticsData.couponUsage?.totalDiscountAmount)}</p>
             </CardContent>
           </Card>
         </div>
@@ -290,4 +301,3 @@ export default function AnalyticsDashboardPage() {
     </div>
   );
 }
-

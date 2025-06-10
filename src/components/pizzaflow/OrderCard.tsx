@@ -6,7 +6,7 @@ import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/componen
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import type { Order, OrderStatus } from '@/lib/types';
-import { Clock, Package, DollarSign, User, MapPin, ListOrdered, Info, CheckCircle, Truck, Utensils, ExternalLink, MessageSquare } from 'lucide-react';
+import { Clock, Package, DollarSign, User, MapPin, ListOrdered, Info, CheckCircle, Truck, Utensils, ExternalLink, MessageSquare, Ticket } from 'lucide-react';
 import { formatDistanceToNow, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import Link from 'next/link';
@@ -18,14 +18,14 @@ interface OrderCardProps {
   onOptimizeRoute?: (order: Order) => void;
   onMarkDelivered?: (order: Order) => void;
   onViewDetails?: (order: Order) => void;
-  isNew?: boolean; // Para destacar novos pedidos pendentes
+  isNew?: boolean; 
 }
 
 const statusColors: Record<OrderStatus, string> = {
   Pendente: 'bg-yellow-500 hover:bg-yellow-600',
-  "Em Preparo": 'bg-blue-500 hover:bg-blue-600',
-  "Aguardando Retirada": 'bg-orange-500 hover:bg-orange-600',
-  "Saiu para Entrega": 'bg-purple-500 hover:bg-purple-600',
+  EmPreparo: 'bg-blue-500 hover:bg-blue-600',
+  AguardandoRetirada: 'bg-orange-500 hover:bg-orange-600',
+  SaiuParaEntrega: 'bg-purple-500 hover:bg-purple-600',
   Entregue: 'bg-green-500 hover:bg-green-600',
   Cancelado: 'bg-red-500 hover:bg-red-600',
 };
@@ -81,7 +81,7 @@ const OrderCard: FC<OrderCardProps> = ({
         </div>
         <div className="flex items-center font-semibold">
           <DollarSign className="h-4 w-4 mr-2 text-primary shrink-0" />
-          <span>R$ {order.totalAmount.toFixed(2).replace('.',',')}</span>
+          <span>R$ {Number(order.totalAmount).toFixed(2).replace('.',',')}</span>
         </div>
          {(order.notes || hasItemNotes) && (
             <div className="flex items-start text-xs text-muted-foreground mt-1">
@@ -89,7 +89,13 @@ const OrderCard: FC<OrderCardProps> = ({
                 <span>{order.notes ? `Obs Pedido. ` : ''}{hasItemNotes ? `Obs Item(s).` : ''}</span>
             </div>
         )}
-        {order.optimizedRoute && isUrl(order.optimizedRoute) && order.status === 'Saiu para Entrega' && (
+        {order.appliedCouponCode && (
+          <div className="flex items-start text-xs text-green-600 mt-1">
+            <Ticket className="h-3.5 w-3.5 mr-1.5 shrink-0 mt-0.5" />
+            <span>Cupom: {order.appliedCouponCode} (-R$ {Number(order.appliedCouponDiscount || 0).toFixed(2).replace('.',',')})</span>
+          </div>
+        )}
+        {order.optimizedRoute && isUrl(order.optimizedRoute) && order.status === 'SaiuParaEntrega' && (
           <div className="flex items-start mt-1">
             <Truck className="h-4 w-4 mr-2 text-purple-500 shrink-0 mt-0.5" />
             <Link href={order.optimizedRoute} target="_blank" rel="noopener noreferrer" className="text-xs text-purple-600 hover:text-purple-800 hover:underline break-all flex items-center">
@@ -109,17 +115,17 @@ const OrderCard: FC<OrderCardProps> = ({
             <Package className="mr-2 h-4 w-4" /> Aceitar Pedido
           </Button>
         )}
-        {order.status === 'Em Preparo' && onReadyForPickup && (
+        {order.status === 'EmPreparo' && onReadyForPickup && (
           <Button size="sm" onClick={() => onReadyForPickup(order.id)} className="bg-blue-600 hover:bg-blue-700 text-white w-full sm:w-auto">
             <Utensils className="mr-2 h-4 w-4" /> Pronto
           </Button>
         )}
-        {order.status === 'Aguardando Retirada' && onOptimizeRoute && (
+        {order.status === 'AguardandoRetirada' && onOptimizeRoute && (
           <Button size="sm" onClick={() => onOptimizeRoute(order)} className="bg-orange-600 hover:bg-orange-700 text-white w-full sm:w-auto">
              <Truck className="mr-2 h-4 w-4" /> Otimizar/Designar
           </Button>
         )}
-        {order.status === 'Saiu para Entrega' && onMarkDelivered && (
+        {order.status === 'SaiuParaEntrega' && onMarkDelivered && (
           <Button size="sm" onClick={() => onMarkDelivered(order)} className="bg-green-600 hover:bg-green-700 text-white w-full sm:w-auto">
             <CheckCircle className="mr-2 h-4 w-4" /> Marcar Entregue
           </Button>
@@ -130,4 +136,3 @@ const OrderCard: FC<OrderCardProps> = ({
 };
 
 export default OrderCard;
-

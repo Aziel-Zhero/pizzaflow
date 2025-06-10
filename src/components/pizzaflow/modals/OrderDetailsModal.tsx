@@ -20,7 +20,7 @@ import { Badge } from '@/components/ui/badge';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { MessageSquare } from 'lucide-react';
+import { MessageSquare, Ticket } from 'lucide-react';
 
 interface OrderDetailsModalProps {
   order: Order | null;
@@ -40,8 +40,6 @@ const OrderDetailsModal: FC<OrderDetailsModalProps> = ({ order, isOpen, onClose,
      onUpdateOrder({ ...order, notes: e.target.value });
   };
 
-  // Note: Item-specific notes are not editable in this modal for simplicity,
-  // but they are displayed. They would be edited on the new order page or a more complex order edit screen.
 
   const confirmPaymentAndClose = () => {
     if (order.paymentType) {
@@ -87,7 +85,7 @@ const OrderDetailsModal: FC<OrderDetailsModalProps> = ({ order, isOpen, onClose,
                 <div key={item.id} className="text-sm border-b pb-1 last:border-b-0">
                   <div className="flex justify-between">
                     <span>{item.name} x {item.quantity}</span>
-                    <span>R$ {(item.price * item.quantity).toFixed(2).replace('.',',')}</span>
+                    <span>R$ {(Number(item.price) * item.quantity).toFixed(2).replace('.',',')}</span>
                   </div>
                   {item.itemNotes && (
                     <p className="text-xs text-muted-foreground italic mt-0.5">Obs: {item.itemNotes}</p>
@@ -96,10 +94,21 @@ const OrderDetailsModal: FC<OrderDetailsModalProps> = ({ order, isOpen, onClose,
               ))}
             </div>
           </div>
+           {order.appliedCouponCode && (
+            <div className="grid grid-cols-4 items-center gap-4">
+                <Label className="text-right flex items-center gap-1"><Ticket className="h-4 w-4"/>Cupom</Label>
+                <div className="col-span-3 text-sm">
+                    <span className="font-semibold">{order.appliedCouponCode}</span>
+                    {order.appliedCouponDiscount && order.appliedCouponDiscount > 0 && (
+                         <span className="text-green-600 ml-1">(-R$ {Number(order.appliedCouponDiscount).toFixed(2).replace('.',',')})</span>
+                    )}
+                </div>
+            </div>
+           )}
            <div className="grid grid-cols-4 items-center gap-4">
             <Label className="text-right font-semibold">Total</Label>
             <div className="col-span-3 text-lg font-semibold text-primary">
-              R$ {order.totalAmount.toFixed(2).replace('.',',')}
+              R$ {Number(order.totalAmount).toFixed(2).replace('.',',')}
             </div>
           </div>
           <div className="grid grid-cols-4 items-center gap-4">
@@ -139,7 +148,7 @@ const OrderDetailsModal: FC<OrderDetailsModalProps> = ({ order, isOpen, onClose,
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="Dinheiro">Dinheiro</SelectItem>
-                    <SelectItem value="Cartão">Cartão</SelectItem>
+                    <SelectItem value="Cartao">Cartão</SelectItem>
                     <SelectItem value="Online">Online (PIX)</SelectItem>
                   </SelectContent>
                 </Select>
@@ -176,4 +185,3 @@ const OrderDetailsModal: FC<OrderDetailsModalProps> = ({ order, isOpen, onClose,
 };
 
 export default OrderDetailsModal;
-

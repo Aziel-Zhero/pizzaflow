@@ -4,74 +4,81 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import AppHeader from '@/components/pizzaflow/AppHeader';
-import type { Order, OrderStatus } from '@/lib/types';
+import type { Order, OrderStatus, Coupon } from '@/lib/types';
 import { getOrderById } from '@/app/actions'; 
 import { Card, CardHeader, CardTitle, CardContent, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Loader2, Package, Pizza, CookingPot, Truck, CheckCircle2, AlertCircle, RefreshCw, ShoppingCart } from 'lucide-react';
+import { Loader2, Package, Pizza, CookingPot, Truck, CheckCircle2, AlertCircle, RefreshCw, ShoppingCart, Gift } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import SplitText from '@/components/common/SplitText';
 import { Progress } from '@/components/ui/progress';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
+import Confetti from 'react-confetti'; // Assuming you'd install this: npm install react-confetti
 
 const PIZZERIA_NAME = "Pizzaria Planeta";
+
+const GENERIC_NEXT_PURCHASE_COUPON_CODE = "VOLTESEMPRE15";
 
 const statusDetails: Record<OrderStatus, { 
     message: string; 
     Icon: React.ElementType; 
     progress: number; 
     details?: string;
-    colorClass: string; // Tailwind class for color
+    colorClass: string; 
     iconColorClass: string;
+    finalMessage?: string;
+    charismaticMessage?: string;
 }> = {
     Pendente: { 
         message: "Aguardando confirmação...", 
         Icon: ShoppingCart, 
         progress: 10,
         details: "Seu pedido foi recebido e está na fila para ser preparado.",
-        colorClass: "bg-yellow-500/10 border-yellow-500",
+        colorClass: "border-yellow-500 bg-yellow-500/10",
         iconColorClass: "text-yellow-500"
     },
-    "Em Preparo": { 
+    EmPreparo: { 
         message: "Seu pedido está sendo preparado!", 
         Icon: CookingPot, 
         progress: 40,
         details: "Nossos chefs estão caprichando na sua pizza!",
-        colorClass: "bg-blue-500/10 border-blue-500",
+        colorClass: "border-blue-500 bg-blue-500/10",
         iconColorClass: "text-blue-500 animate-pulse"
     },
-    "Aguardando Retirada": { 
+    AguardandoRetirada: { 
         message: "Pronto para retirada/entrega!", 
         Icon: Package, 
         progress: 75,
         details: "Seu pedido está quentinho esperando por você ou pelo entregador.",
-        colorClass: "bg-orange-500/10 border-orange-500",
+        colorClass: "border-orange-500 bg-orange-500/10",
         iconColorClass: "text-orange-500"
     },
-    "Saiu para Entrega": { 
+    SaiuParaEntrega: { 
         message: "Seu pedido saiu para entrega!", 
         Icon: Truck, 
         progress: 90,
         details: "O entregador já está a caminho. Prepare a mesa!",
-        colorClass: "bg-purple-500/10 border-purple-500",
+        colorClass: "border-purple-500 bg-purple-500/10",
         iconColorClass: "text-purple-500 animate-bounce"
     },
     Entregue: { 
         message: "Pedido Entregue!", 
         Icon: CheckCircle2, 
         progress: 100,
-        details: "Bom apetite! Esperamos que goste.",
-        colorClass: "bg-green-500/10 border-green-500",
-        iconColorClass: "text-green-500"
+        details: "Esperamos que esteja delicioso!",
+        colorClass: "border-green-500 bg-green-500/10",
+        iconColorClass: "text-green-500",
+        finalMessage: "Bom apetite!",
+        charismaticMessage: `Que alegria ter você como cliente! 🎉 Esperamos que sua pizza esteja incrível. Use o cupom ${GENERIC_NEXT_PURCHASE_COUPON_CODE} para ter 15% de desconto na sua próxima aventura gastronômica conosco!`
     },
     Cancelado: { 
         message: "Pedido Cancelado", 
         Icon: AlertCircle, 
         progress: 0,
         details: "Houve um problema e seu pedido foi cancelado. Entre em contato para mais detalhes.",
-        colorClass: "bg-red-500/10 border-red-500",
+        colorClass: "border-red-500 bg-red-500/10",
         iconColorClass: "text-red-500"
     },
 };
@@ -85,7 +92,21 @@ export default function OrderStatusPage() {
   const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
+  const [showConfetti, setShowConfetti] = useState(false);
+  const [windowSize, setWindowSize] = useState<{width: number | undefined, height: number | undefined}>({width: undefined, height: undefined});
 
+
+  useEffect(() => {
+    function handleResize() {
+      setWindowSize({
+        width: window.innerWidth,
+        height: window.innerHeight,
+      });
+    }
+    window.addEventListener('resize', handleResize);
+    handleResize(); // Set initial size
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const fetchOrderDetails = async (showLoadingSpinner = true) => {
     if (!orderId) {
@@ -100,6 +121,10 @@ export default function OrderStatusPage() {
       if (fetchedOrder) {
         setOrder(fetchedOrder);
         setLastUpdated(new Date());
+        if (fetchedOrder.status === 'Entregue' && !showConfetti) {
+            setShowConfetti(true);
+            setTimeout(() => setShowConfetti(false), 7000); // Confetti for 7 seconds
+        }
       } else {
         toast({ title: "Pedido não encontrado", description: `Não foi possível encontrar o pedido ${orderId}.`, variant: "destructive" });
         setOrder(null); 
@@ -113,7 +138,7 @@ export default function OrderStatusPage() {
 
   useEffect(() => {
     fetchOrderDetails();
-  }, [orderId]); // Removed toast, router from deps as they are stable
+  }, [orderId]); 
 
   useEffect(() => {
     if (!order || order.status === 'Entregue' || order.status === 'Cancelado') {
@@ -127,7 +152,7 @@ export default function OrderStatusPage() {
   }, [order, orderId]);
 
   const currentStatusInfo = order ? statusDetails[order.status] : statusDetails.Pendente;
-  const { Icon, message, progress, details, colorClass, iconColorClass } = currentStatusInfo;
+  const { Icon, message, progress, details, colorClass, iconColorClass, charismaticMessage, finalMessage } = currentStatusInfo;
 
   if (isLoading) {
     return (
@@ -155,8 +180,17 @@ export default function OrderStatusPage() {
     );
   }
 
+  const progressColorClass = 
+    order.status === 'Entregue' ? "bg-green-500" :
+    order.status === 'Cancelado' ? "bg-red-500" :
+    order.status === 'SaiuParaEntrega' ? "bg-purple-500" :
+    order.status === 'AguardandoRetirada' ? "bg-orange-500" :
+    order.status === 'EmPreparo' ? "bg-blue-500" : "bg-yellow-500";
+
+
   return (
     <div className="flex flex-col min-h-screen bg-background">
+      {showConfetti && windowSize.width && windowSize.height && <Confetti width={windowSize.width} height={windowSize.height} recycle={false} numberOfPieces={250} />}
       <AppHeader appName={PIZZERIA_NAME} />
       <main className="flex-grow container mx-auto px-4 py-8 flex flex-col items-center">
         <SplitText
@@ -166,15 +200,15 @@ export default function OrderStatusPage() {
           textAlign='center'
         />
 
-        <Card className={cn("w-full max-w-2xl shadow-xl border transition-all duration-500 ease-in-out", colorClass)}>
+        <Card className={cn("w-full max-w-2xl shadow-xl border-2 transition-all duration-500 ease-in-out", colorClass)}>
           <CardHeader className="text-center">
             <Icon className={cn("mx-auto h-16 w-16 mb-4 transition-colors duration-500", iconColorClass)} />
             <CardTitle className="text-2xl">{message}</CardTitle>
             {details && <CardDescription className="mt-1">{details}</CardDescription>}
-            {order.status === "Saiu para Entrega" && order.deliveryPerson && (
+            {order.status === "SaiuParaEntrega" && order.deliveryPerson && (
                 <p className="text-sm text-muted-foreground mt-1">Entregador(a): <span className="font-semibold">{order.deliveryPerson}</span></p>
             )}
-            {order.status === "Saiu para Entrega" && order.optimizedRoute && (
+            {order.status === "SaiuParaEntrega" && order.optimizedRoute && (
                 <Button variant="link" size="sm" asChild className="mt-1">
                     <a href={order.optimizedRoute} target="_blank" rel="noopener noreferrer">Acompanhar Entrega no Mapa</a>
                 </Button>
@@ -182,25 +216,36 @@ export default function OrderStatusPage() {
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="space-y-2">
-                <Progress value={progress} className={cn("w-full h-3 transition-all duration-500", 
-                    order.status === 'Entregue' ? "bg-green-500" :
-                    order.status === 'Cancelado' ? "bg-red-500" :
-                    order.status === 'Saiu para Entrega' ? "bg-purple-500" :
-                    order.status === 'Aguardando Retirada' ? "bg-orange-500" :
-                    order.status === 'Em Preparo' ? "bg-blue-500" : "bg-yellow-500"
-                )} />
+                <Progress value={progress} className="w-full h-3 transition-all duration-500" />
+                 <div className="w-full h-3 rounded-full bg-muted overflow-hidden">
+                    <div
+                        className={cn("h-full transition-all duration-1000 ease-out", progressColorClass)}
+                        style={{ width: `${progress}%` }}
+                    />
+                </div>
                 <p className="text-xs text-muted-foreground text-center">
-                    {order.status === 'Entregue' || order.status === 'Cancelado' ? 'Processo finalizado.' : 'Acompanhe o progresso do seu pedido.'}
+                    {order.status === 'Entregue' || order.status === 'Cancelado' ? (finalMessage || 'Processo finalizado.') : 'Acompanhe o progresso do seu pedido.'}
                 </p>
             </div>
             
+             {order.status === 'Entregue' && charismaticMessage && (
+                <div className={cn("mt-4 p-4 rounded-md text-center", colorClass, "border-0")}>
+                    <Gift className="mx-auto h-10 w-10 mb-2 text-primary" />
+                    <p className="text-md font-semibold text-foreground">{charismaticMessage}</p>
+                </div>
+            )}
+
+
             <div className="border-t pt-4">
                 <h3 className="font-semibold mb-2 text-lg">Resumo do Pedido:</h3>
                 <div className="text-sm space-y-1">
                     <p><strong>Cliente:</strong> {order.customerName}</p>
                     <p><strong>Endereço:</strong> {order.customerAddress}</p>
                     {order.customerReferencePoint && <p><strong>Referência:</strong> {order.customerReferencePoint}</p>}
-                    <p><strong>Total:</strong> <span className="font-bold text-primary">R$ {order.totalAmount.toFixed(2).replace('.', ',')}</span></p>
+                    {order.appliedCouponCode && (
+                        <p><strong>Cupom Aplicado:</strong> {order.appliedCouponCode} (-R$ {Number(order.appliedCouponDiscount || 0).toFixed(2).replace('.',',')})</p>
+                    )}
+                    <p><strong>Total Pago:</strong> <span className="font-bold text-primary">R$ {Number(order.totalAmount).toFixed(2).replace('.', ',')}</span></p>
                     <p><strong>Forma de Pagamento:</strong> {order.paymentType}</p>
                     {order.notes && <p><strong>Observações Gerais:</strong> {order.notes}</p>}
                     <p className="font-medium mt-1">Itens:</p>
@@ -216,14 +261,22 @@ export default function OrderStatusPage() {
             </div>
           </CardContent>
           <CardFooter className="flex flex-col items-center gap-4">
-            <Button onClick={() => fetchOrderDetails(true)} variant="outline" disabled={isLoading}>
-              <RefreshCw className={`mr-2 h-4 w-4 ${isLoading && order === null ? 'animate-spin' : ''}`} /> {/* Spin only on full load */}
-              Atualizar Status
-            </Button>
+            {order.status === 'Entregue' ? (
+                <Button onClick={() => router.push('/novo-pedido')} variant="default" size="lg">
+                    Obrigado! Fazer Novo Pedido
+                </Button>
+            ) : (
+                <Button onClick={() => fetchOrderDetails(true)} variant="outline" disabled={isLoading}>
+                <RefreshCw className={`mr-2 h-4 w-4 ${isLoading && order === null ? 'animate-spin' : ''}`} />
+                Atualizar Status
+                </Button>
+            )}
             <p className="text-xs text-muted-foreground">
                 Última atualização: {format(order.updatedAt ? parseISO(order.updatedAt) : lastUpdated, "dd/MM/yyyy 'às' HH:mm:ss", { locale: ptBR })}
             </p>
-            <Button onClick={() => router.push('/novo-pedido')} variant="link">Fazer Novo Pedido</Button>
+            {order.status !== 'Entregue' && (
+                 <Button onClick={() => router.push('/novo-pedido')} variant="link">Fazer Novo Pedido</Button>
+            )}
           </CardFooter>
         </Card>
         
@@ -234,4 +287,3 @@ export default function OrderStatusPage() {
     </div>
   );
 }
-

@@ -10,6 +10,7 @@ import { useState, useEffect } from 'react';
 import AppHeader from '@/components/pizzaflow/AppHeader';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge'; // Added import
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, Ticket, PlusCircle } from 'lucide-react';
 import SplitText from '@/components/common/SplitText';
@@ -39,7 +40,7 @@ export default function CouponManagementPage() {
     setIsLoading(true);
     try {
       // Futuramente: const fetchedCoupons = await getAllCouponsAction();
-      const fetchedCoupons = await getCouponsMock(); 
+      const fetchedCoupons = await getCouponsMock();
       setCoupons(fetchedCoupons);
     } catch (error) {
       toast({ title: "Erro", description: "Falha ao carregar cupons.", variant: "destructive" });

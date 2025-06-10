@@ -6,7 +6,7 @@ import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/componen
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import type { Order, OrderStatus } from '@/lib/types';
-import { Clock, Package,DollarSign, User, MapPin, ListOrdered, Info, CheckCircle, Truck, Utensils, ExternalLink } from 'lucide-react';
+import { Clock, Package, DollarSign, User, MapPin, ListOrdered, Info, CheckCircle, Truck, Utensils, ExternalLink, MessageSquare } from 'lucide-react';
 import { formatDistanceToNow, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import Link from 'next/link';
@@ -18,6 +18,7 @@ interface OrderCardProps {
   onOptimizeRoute?: (order: Order) => void;
   onMarkDelivered?: (order: Order) => void;
   onViewDetails?: (order: Order) => void;
+  isNew?: boolean; // Para destacar novos pedidos pendentes
 }
 
 const statusColors: Record<OrderStatus, string> = {
@@ -36,13 +37,24 @@ const OrderCard: FC<OrderCardProps> = ({
   onOptimizeRoute,
   onMarkDelivered,
   onViewDetails,
+  isNew = false,
 }) => {
   const timeAgo = formatDistanceToNow(parseISO(order.createdAt), { addSuffix: true, locale: ptBR });
   const isUrl = (str: string | undefined): boolean => !!str && (str.startsWith('http://') || str.startsWith('https://'));
-
+  const hasItemNotes = order.items.some(item => item.itemNotes && item.itemNotes.trim() !== '');
 
   return (
-    <Card className="shadow-lg hover:shadow-xl transition-shadow duration-300 flex flex-col h-full">
+    <Card className={`shadow-lg hover:shadow-xl transition-shadow duration-300 flex flex-col h-full ${isNew ? 'border-2 border-primary animate-pulse-border' : ''}`}>
+      <style jsx>{`
+        .animate-pulse-border {
+          animation: pulse-border 2s infinite;
+        }
+        @keyframes pulse-border {
+          0% { border-color: hsl(var(--primary)); }
+          50% { border-color: hsl(var(--primary) / 0.5); }
+          100% { border-color: hsl(var(--primary)); }
+        }
+      `}</style>
       <CardHeader className="pb-3">
         <div className="flex justify-between items-start">
           <CardTitle className="text-lg font-headline">{order.id}</CardTitle>
@@ -51,6 +63,7 @@ const OrderCard: FC<OrderCardProps> = ({
         <div className="text-xs text-muted-foreground flex items-center mt-1">
           <Clock className="h-3 w-3 mr-1" />
           {timeAgo}
+          {isNew && <Badge variant="destructive" className="ml-2 animate-pulse">NOVO!</Badge>}
         </div>
       </CardHeader>
       <CardContent className="space-y-2 text-sm pb-4 flex-grow">
@@ -70,6 +83,12 @@ const OrderCard: FC<OrderCardProps> = ({
           <DollarSign className="h-4 w-4 mr-2 text-primary shrink-0" />
           <span>R$ {order.totalAmount.toFixed(2).replace('.',',')}</span>
         </div>
+         {(order.notes || hasItemNotes) && (
+            <div className="flex items-start text-xs text-muted-foreground mt-1">
+                <MessageSquare className="h-3.5 w-3.5 mr-1.5 text-orange-500 shrink-0 mt-0.5" />
+                <span>{order.notes ? `Obs Pedido. ` : ''}{hasItemNotes ? `Obs Item(s).` : ''}</span>
+            </div>
+        )}
         {order.optimizedRoute && isUrl(order.optimizedRoute) && order.status === 'Saiu para Entrega' && (
           <div className="flex items-start mt-1">
             <Truck className="h-4 w-4 mr-2 text-purple-500 shrink-0 mt-0.5" />
@@ -111,3 +130,4 @@ const OrderCard: FC<OrderCardProps> = ({
 };
 
 export default OrderCard;
+

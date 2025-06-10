@@ -7,8 +7,8 @@ import type { DashboardAnalyticsData, DailyRevenue, OrdersByStatusData, OrderSta
 import { getDashboardAnalytics, exportOrdersToCSV } from '@/app/actions';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, TooltipProps } from 'recharts';
-import { Loader2, Package, DollarSign, ListChecks, TrendingUp, Users, Download } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { Loader2, Package, DollarSign, ListChecks, TrendingUp, Download, ClockIcon } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { ChartContainer, ChartTooltipContent } from '@/components/ui/chart';
 import type { ChartConfig } from '@/components/ui/chart';
@@ -72,7 +72,7 @@ export default function AnalyticsDashboardPage() {
         toast({ title: "Exportar CSV", description: csvData, variant: "default" });
         return;
       }
-      const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
+      const blob = new Blob([`\uFEFF${csvData}`], { type: 'text/csv;charset=utf-8;' }); // Add BOM for Excel
       const link = document.createElement("a");
       if (link.download !== undefined) {
         const url = URL.createObjectURL(blob);
@@ -139,7 +139,7 @@ export default function AnalyticsDashboardPage() {
             </Button>
          </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-4 gap-6 mb-8">
           <Card className="shadow-lg">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Receita Total</CardTitle>
@@ -168,6 +168,20 @@ export default function AnalyticsDashboardPage() {
             <CardContent>
               <div className="text-2xl font-bold">{formatCurrency(analyticsData.averageOrderValue)}</div>
               <p className="text-xs text-muted-foreground">Valor médio por pedido</p>
+            </CardContent>
+          </Card>
+          <Card className="shadow-lg">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Tempo Médio Entrega</CardTitle>
+              <ClockIcon className="h-5 w-5 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {analyticsData.timeEstimates.averageTimeToDeliveryMinutes !== undefined 
+                    ? `${analyticsData.timeEstimates.averageTimeToDeliveryMinutes} min` 
+                    : "N/A"}
+                </div>
+              <p className="text-xs text-muted-foreground">Do pedido à entrega (pedidos entregues)</p>
             </CardContent>
           </Card>
         </div>
@@ -216,12 +230,12 @@ export default function AnalyticsDashboardPage() {
                         nameKey="name"
                         cx="50%"
                         cy="50%"
-                        outerRadius={100} // Ajustado para caber melhor com labels
-                        innerRadius={40} // Ajustado
-                        labelLine={true} // Habilitado para melhor visualização
-                        label={({ cx, cy, midAngle, innerRadius, outerRadius, percent, index, name, value }) => {
+                        outerRadius={100} 
+                        innerRadius={40} 
+                        labelLine={true} 
+                        label={({ cx, cy, midAngle, outerRadius, percent, index, name, value }) => {
                           const RADIAN = Math.PI / 180;
-                          const radius = outerRadius + 15; // Posição do label fora da pizza
+                          const radius = outerRadius + 15; 
                           const x = cx + radius * Math.cos(-midAngle * RADIAN);
                           const y = cy + radius * Math.sin(-midAngle * RADIAN);
                           return (
@@ -276,3 +290,4 @@ export default function AnalyticsDashboardPage() {
     </div>
   );
 }
+

@@ -9,11 +9,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, PlusCircle, Edit3, Trash2, Image as ImageIcon, Utensils } from 'lucide-react';
+import { Loader2, PlusCircle, Edit3, Trash2, Image as ImageIcon, Utensils, Tag } from 'lucide-react';
 import SplitText from '@/components/common/SplitText';
 import Image from 'next/image';
 
@@ -25,6 +26,7 @@ const initialMenuItemFormState: Omit<MenuItem, 'id'> = {
   category: '',
   description: '',
   imageUrl: '',
+  isPromotion: false,
 };
 
 export default function MenuManagementPage() {
@@ -50,12 +52,17 @@ export default function MenuManagementPage() {
 
   useEffect(() => {
     fetchMenuItems();
-  }, [toast]);
+  }, []); // Removed toast from dependency array to prevent potential loops if toast itself changes frequently
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setCurrentItem(prev => ({ ...prev, [name]: name === 'price' ? parseFloat(value) || 0 : value }));
   };
+
+  const handleCheckboxChange = (checked: boolean | "indeterminate") => {
+     setCurrentItem(prev => ({ ...prev, isPromotion: Boolean(checked) }));
+  };
+
    const handleSelectChange = (value: string) => {
     setCurrentItem(prev => ({ ...prev, category: value }));
   };
@@ -84,7 +91,7 @@ export default function MenuManagementPage() {
         await updateMenuItem(currentItem as MenuItem);
         toast({ title: "Sucesso", description: "Item do cardápio atualizado.", variant: "default" });
       } else {
-        await addMenuItem(currentItem as Omit<MenuItem, 'id'> & { id?: string }); // id can be optional for new items
+        await addMenuItem(currentItem as Omit<MenuItem, 'id'>);
         toast({ title: "Sucesso", description: "Novo item adicionado ao cardápio.", variant: "default" });
       }
       fetchMenuItems();
@@ -151,10 +158,15 @@ export default function MenuManagementPage() {
                 <h2 className="text-2xl font-semibold text-secondary-foreground mb-4 border-b pb-2">{category}</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                   {menuItems.filter(item => item.category === category).map(item => (
-                    <Card key={item.id} className="shadow-lg flex flex-col overflow-hidden">
+                    <Card key={item.id} className="shadow-lg flex flex-col overflow-hidden relative">
+                       {item.isPromotion && (
+                         <div className="absolute top-2 right-2 bg-accent text-accent-foreground px-2 py-1 text-xs font-bold rounded-full z-10 flex items-center shadow-md">
+                           <Tag className="h-3 w-3 mr-1" /> PROMO
+                         </div>
+                       )}
                        <div className="relative w-full h-48 bg-muted">
                         {item.imageUrl ? (
-                          <Image src={item.imageUrl} alt={item.name} layout="fill" objectFit="cover" data-ai-hint="food item" />
+                          <Image src={item.imageUrl} alt={item.name} layout="fill" objectFit="cover" data-ai-hint={item.dataAiHint || "food item"} />
                         ) : (
                           <div className="flex items-center justify-center h-full">
                             <ImageIcon className="h-16 w-16 text-muted-foreground" />
@@ -199,7 +211,7 @@ export default function MenuManagementPage() {
               </div>
               <div>
                 <Label htmlFor="price">Preço (R$)</Label>
-                <Input id="price" name="price" type="number" step="0.01" value={currentItem.price} onChange={handleInputChange} required />
+                <Input id="price" name="price" type="number" step="0.01" min="0" value={currentItem.price} onChange={handleInputChange} required />
               </div>
                <div>
                 <Label htmlFor="category">Categoria</Label>
@@ -223,9 +235,19 @@ export default function MenuManagementPage() {
                 <Input id="imageUrl" name="imageUrl" value={currentItem.imageUrl || ''} onChange={handleInputChange} placeholder="https://exemplo.com/imagem.png" />
                  {currentItem.imageUrl && (
                     <div className="mt-2 relative w-full h-32 rounded border overflow-hidden">
-                        <Image src={currentItem.imageUrl} alt="Pré-visualização" layout="fill" objectFit="contain" data-ai-hint="food preview"/>
+                        <Image src={currentItem.imageUrl} alt="Pré-visualização" layout="fill" objectFit="contain" data-ai-hint={currentItem.dataAiHint || "food preview"}/>
                     </div>
                  )}
+              </div>
+               <div className="flex items-center space-x-2">
+                <Checkbox 
+                    id="isPromotion" 
+                    checked={currentItem.isPromotion || false} 
+                    onCheckedChange={handleCheckboxChange}
+                />
+                <Label htmlFor="isPromotion" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                    Marcar como Promoção
+                </Label>
               </div>
               <DialogFooter>
                 <DialogClose asChild>
@@ -246,3 +268,4 @@ export default function MenuManagementPage() {
     </div>
   );
 }
+

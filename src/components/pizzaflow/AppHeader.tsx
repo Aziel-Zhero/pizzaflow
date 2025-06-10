@@ -1,7 +1,7 @@
 
 "use client";
 import type { FC } from 'react';
-import { Pizza, BarChart3, ListOrdered, PlusCircle, LayoutDashboard, Utensils } from 'lucide-react';
+import { Pizza, BarChart3, ListOrdered, PlusCircle, LayoutDashboard, Utensils, Moon, Sun } from 'lucide-react';
 import SplitText from '@/components/common/SplitText';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -13,8 +13,8 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-
+} from "@/components/ui/dropdown-menu";
+import { useTheme } from 'next-themes'; // Assuming next-themes is or will be installed
 
 interface AppHeaderProps {
   appName: string;
@@ -22,6 +22,7 @@ interface AppHeaderProps {
 
 const AppHeader: FC<AppHeaderProps> = ({ appName }) => {
   const pathname = usePathname();
+  const { theme, setTheme } = useTheme();
 
   return (
     <header className="bg-card border-b border-border shadow-md sticky top-0 z-40">
@@ -43,28 +44,33 @@ const AppHeader: FC<AppHeaderProps> = ({ appName }) => {
           </Link>
         </div>
         <nav className="flex items-center gap-2">
+           <Button variant="ghost" size="icon" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label="Toggle theme">
+            <Sun className="h-[1.2rem] w-[1.2rem] rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
+            <Moon className="absolute h-[1.2rem] w-[1.2rem] rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
+            <span className="sr-only">Alternar tema</span>
+          </Button>
           <Button variant={pathname === '/novo-pedido' ? "default" : "outline"} size="sm" asChild>
             <Link href="/novo-pedido">
-              <PlusCircle className="mr-2 h-4 w-4" />
-              Novo Pedido (Cliente)
+              <PlusCircle />
+              Novo Pedido
             </Link>
           </Button>
           <Button variant={pathname === '/' ? "secondary" : "outline"} size="sm" asChild>
             <Link href="/">
-              <ListOrdered className="mr-2 h-4 w-4" />
-              Painel de Pedidos
+              <ListOrdered/>
+              Pedidos
             </Link>
           </Button>
           <Button variant={pathname === '/dashboard' ? "secondary" : "outline"} size="sm" asChild>
             <Link href="/dashboard">
-              <BarChart3 className="mr-2 h-4 w-4" />
+              <BarChart3 />
               Dashboard
             </Link>
           </Button>
            <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm">
-                <LayoutDashboard className="mr-2 h-4 w-4" /> Admin
+                <LayoutDashboard /> Admin
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
@@ -85,3 +91,4 @@ const AppHeader: FC<AppHeaderProps> = ({ appName }) => {
 };
 
 export default AppHeader;
+

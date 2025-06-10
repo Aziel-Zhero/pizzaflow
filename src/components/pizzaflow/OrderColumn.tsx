@@ -5,6 +5,7 @@ import type { Order } from '@/lib/types';
 import OrderCard from './OrderCard';
 import SplitText from '@/components/common/SplitText';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { parseISO, differenceInMinutes } from 'date-fns';
 
 interface OrderColumnProps {
   title: string;
@@ -15,16 +16,19 @@ interface OrderColumnProps {
   onOptimizeRoute?: (order: Order) => void;
   onMarkDelivered?: (order: Order) => void;
   onViewDetails?: (order: Order) => void;
+  isPendingColumn?: boolean; // Para estilização especial da coluna de pendentes
 }
 
 const OrderColumn: FC<OrderColumnProps> = ({
   title,
   orders,
   icon,
+  isPendingColumn = false,
   ...cardActions
 }) => {
+  const now = new Date();
   return (
-    <div className="bg-card p-3 sm:p-4 rounded-lg shadow-md flex flex-col min-w-[300px] sm:min-w-[330px] md:min-w-[340px] max-w-full">
+    <div className={`p-3 sm:p-4 rounded-lg shadow-md flex flex-col min-w-[300px] sm:min-w-[340px] md:min-w-[360px] max-w-full ${isPendingColumn ? 'bg-transparent border-none shadow-none p-0' : 'bg-card'}`}>
       {(title) && (
         <div className="flex items-center mb-4">
           {icon}
@@ -43,13 +47,18 @@ const OrderColumn: FC<OrderColumnProps> = ({
         </div>
       )}
       {orders.length === 0 ? (
-        <p className="text-muted-foreground text-center py-8 flex-grow flex items-center justify-center">{title ? "Nenhum pedido aqui." : "Nenhum pedido concluído."}</p>
+        <p className="text-muted-foreground text-center py-8 flex-grow flex items-center justify-center">{title ? `Nenhum pedido ${title.toLowerCase()}.` : "Nenhum pedido aqui."}</p>
       ) : (
-        <ScrollArea className="flex-grow h-0 min-h-[300px] pr-2"> {/* Increased min-h for more content visibility */}
+        <ScrollArea className="flex-grow h-0 min-h-[400px] pr-2"> {/* Increased min-h */}
           <div className="space-y-4">
-            {orders.map((order) => (
-              <OrderCard key={order.id} order={order} {...cardActions} />
-            ))}
+            {orders.map((order) => {
+              const orderCreatedAt = parseISO(order.createdAt);
+              // Considera novo se criado nos últimos 5 minutos, apenas para coluna de pendentes
+              const isNew = isPendingColumn && differenceInMinutes(now, orderCreatedAt) <= 5;
+              return (
+                 <OrderCard key={order.id} order={order} {...cardActions} isNew={isNew} />
+              )
+            })}
           </div>
         </ScrollArea>
       )}
@@ -58,3 +67,4 @@ const OrderColumn: FC<OrderColumnProps> = ({
 };
 
 export default OrderColumn;
+

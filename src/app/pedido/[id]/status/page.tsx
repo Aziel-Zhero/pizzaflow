@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import AppHeader from '@/components/pizzaflow/AppHeader';
 import type { Order, OrderStatus } from '@/lib/types';
-import { getOrderById } from '@/app/actions'; // Assuming you have a getOrderById function
+import { getOrderById } from '@/app/actions'; 
 import { Card, CardHeader, CardTitle, CardContent, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Loader2, Package, Pizza, CookingPot, Truck, CheckCircle2, AlertCircle, RefreshCw, ShoppingCart } from 'lucide-react';
@@ -14,45 +14,65 @@ import SplitText from '@/components/common/SplitText';
 import { Progress } from '@/components/ui/progress';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { cn } from '@/lib/utils';
 
 const PIZZERIA_NAME = "Pizzaria Planeta";
 
-const statusDetails: Record<OrderStatus, { message: string; Icon: React.ElementType; progress: number; details?: string }> = {
+const statusDetails: Record<OrderStatus, { 
+    message: string; 
+    Icon: React.ElementType; 
+    progress: number; 
+    details?: string;
+    colorClass: string; // Tailwind class for color
+    iconColorClass: string;
+}> = {
     Pendente: { 
         message: "Aguardando confirmação...", 
         Icon: ShoppingCart, 
         progress: 10,
-        details: "Seu pedido foi recebido e está na fila para ser preparado."
+        details: "Seu pedido foi recebido e está na fila para ser preparado.",
+        colorClass: "bg-yellow-500/10 border-yellow-500",
+        iconColorClass: "text-yellow-500"
     },
     "Em Preparo": { 
         message: "Seu pedido está sendo preparado!", 
         Icon: CookingPot, 
         progress: 40,
-        details: "Nossos chefs estão caprichando na sua pizza!"
+        details: "Nossos chefs estão caprichando na sua pizza!",
+        colorClass: "bg-blue-500/10 border-blue-500",
+        iconColorClass: "text-blue-500 animate-pulse"
     },
     "Aguardando Retirada": { 
-        message: "Pronto para retirada!", 
+        message: "Pronto para retirada/entrega!", 
         Icon: Package, 
         progress: 75,
-        details: "Seu pedido está quentinho esperando por você ou pelo entregador."
+        details: "Seu pedido está quentinho esperando por você ou pelo entregador.",
+        colorClass: "bg-orange-500/10 border-orange-500",
+        iconColorClass: "text-orange-500"
     },
     "Saiu para Entrega": { 
         message: "Seu pedido saiu para entrega!", 
         Icon: Truck, 
         progress: 90,
-        details: "O entregador já está a caminho. Prepare a mesa!"
+        details: "O entregador já está a caminho. Prepare a mesa!",
+        colorClass: "bg-purple-500/10 border-purple-500",
+        iconColorClass: "text-purple-500 animate-bounce"
     },
     Entregue: { 
         message: "Pedido Entregue!", 
         Icon: CheckCircle2, 
         progress: 100,
-        details: "Bom apetite! Esperamos que goste."
+        details: "Bom apetite! Esperamos que goste.",
+        colorClass: "bg-green-500/10 border-green-500",
+        iconColorClass: "text-green-500"
     },
     Cancelado: { 
         message: "Pedido Cancelado", 
         Icon: AlertCircle, 
         progress: 0,
-        details: "Houve um problema e seu pedido foi cancelado. Entre em contato para mais detalhes."
+        details: "Houve um problema e seu pedido foi cancelado. Entre em contato para mais detalhes.",
+        colorClass: "bg-red-500/10 border-red-500",
+        iconColorClass: "text-red-500"
     },
 };
 
@@ -67,14 +87,14 @@ export default function OrderStatusPage() {
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
 
 
-  const fetchOrderDetails = async (showLoading = true) => {
+  const fetchOrderDetails = async (showLoadingSpinner = true) => {
     if (!orderId) {
         toast({ title: "Erro", description: "ID do pedido inválido.", variant: "destructive" });
         setIsLoading(false);
-        router.push('/'); // Redirect if no ID
+        router.push('/'); 
         return;
     }
-    if (showLoading) setIsLoading(true);
+    if (showLoadingSpinner) setIsLoading(true);
     try {
       const fetchedOrder = await getOrderById(orderId);
       if (fetchedOrder) {
@@ -82,34 +102,32 @@ export default function OrderStatusPage() {
         setLastUpdated(new Date());
       } else {
         toast({ title: "Pedido não encontrado", description: `Não foi possível encontrar o pedido ${orderId}.`, variant: "destructive" });
-        setOrder(null); // Clear if not found
+        setOrder(null); 
       }
     } catch (error) {
       toast({ title: "Erro", description: "Falha ao buscar detalhes do pedido.", variant: "destructive" });
     } finally {
-      if (showLoading) setIsLoading(false);
+      if (showLoadingSpinner) setIsLoading(false);
     }
   };
 
   useEffect(() => {
     fetchOrderDetails();
-  }, [orderId, toast, router]);
+  }, [orderId]); // Removed toast, router from deps as they are stable
 
-  // Auto-refresh (optional, for demo purposes)
   useEffect(() => {
     if (!order || order.status === 'Entregue' || order.status === 'Cancelado') {
-      return; // Stop refreshing if order is complete or cancelled
+      return; 
     }
-
     const intervalId = setInterval(() => {
-      fetchOrderDetails(false); // Fetch without showing main loader
-    }, 20000); // Refresh every 20 seconds
+      fetchOrderDetails(false); 
+    }, 20000); 
 
     return () => clearInterval(intervalId);
   }, [order, orderId]);
 
   const currentStatusInfo = order ? statusDetails[order.status] : statusDetails.Pendente;
-  const { Icon, message, progress, details } = currentStatusInfo;
+  const { Icon, message, progress, details, colorClass, iconColorClass } = currentStatusInfo;
 
   if (isLoading) {
     return (
@@ -148,18 +166,29 @@ export default function OrderStatusPage() {
           textAlign='center'
         />
 
-        <Card className="w-full max-w-2xl shadow-xl">
+        <Card className={cn("w-full max-w-2xl shadow-xl border transition-all duration-500 ease-in-out", colorClass)}>
           <CardHeader className="text-center">
-            <Icon className={`mx-auto h-16 w-16 mb-4 ${order.status === 'Entregue' ? 'text-green-500' : order.status === 'Cancelado' ? 'text-destructive' : 'text-primary'}`} />
+            <Icon className={cn("mx-auto h-16 w-16 mb-4 transition-colors duration-500", iconColorClass)} />
             <CardTitle className="text-2xl">{message}</CardTitle>
             {details && <CardDescription className="mt-1">{details}</CardDescription>}
             {order.status === "Saiu para Entrega" && order.deliveryPerson && (
                 <p className="text-sm text-muted-foreground mt-1">Entregador(a): <span className="font-semibold">{order.deliveryPerson}</span></p>
             )}
+            {order.status === "Saiu para Entrega" && order.optimizedRoute && (
+                <Button variant="link" size="sm" asChild className="mt-1">
+                    <a href={order.optimizedRoute} target="_blank" rel="noopener noreferrer">Acompanhar Entrega no Mapa</a>
+                </Button>
+            )}
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="space-y-2">
-                <Progress value={progress} className="w-full h-3" />
+                <Progress value={progress} className={cn("w-full h-3 transition-all duration-500", 
+                    order.status === 'Entregue' ? "bg-green-500" :
+                    order.status === 'Cancelado' ? "bg-red-500" :
+                    order.status === 'Saiu para Entrega' ? "bg-purple-500" :
+                    order.status === 'Aguardando Retirada' ? "bg-orange-500" :
+                    order.status === 'Em Preparo' ? "bg-blue-500" : "bg-yellow-500"
+                )} />
                 <p className="text-xs text-muted-foreground text-center">
                     {order.status === 'Entregue' || order.status === 'Cancelado' ? 'Processo finalizado.' : 'Acompanhe o progresso do seu pedido.'}
                 </p>
@@ -173,10 +202,14 @@ export default function OrderStatusPage() {
                     {order.customerReferencePoint && <p><strong>Referência:</strong> {order.customerReferencePoint}</p>}
                     <p><strong>Total:</strong> <span className="font-bold text-primary">R$ {order.totalAmount.toFixed(2).replace('.', ',')}</span></p>
                     <p><strong>Forma de Pagamento:</strong> {order.paymentType}</p>
-                    <p><strong>Itens:</strong></p>
-                    <ul className="list-disc list-inside pl-4">
+                    {order.notes && <p><strong>Observações Gerais:</strong> {order.notes}</p>}
+                    <p className="font-medium mt-1">Itens:</p>
+                    <ul className="list-disc list-inside pl-4 space-y-0.5">
                         {order.items.map(item => (
-                            <li key={item.id}>{item.name} (x{item.quantity})</li>
+                            <li key={item.id}>
+                                {item.name} (x{item.quantity})
+                                {item.itemNotes && <span className="block text-xs text-muted-foreground italic ml-2">- Obs: {item.itemNotes}</span>}
+                            </li>
                         ))}
                     </ul>
                 </div>
@@ -184,11 +217,11 @@ export default function OrderStatusPage() {
           </CardContent>
           <CardFooter className="flex flex-col items-center gap-4">
             <Button onClick={() => fetchOrderDetails(true)} variant="outline" disabled={isLoading}>
-              <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`mr-2 h-4 w-4 ${isLoading && order === null ? 'animate-spin' : ''}`} /> {/* Spin only on full load */}
               Atualizar Status
             </Button>
             <p className="text-xs text-muted-foreground">
-                Última atualização: {format(lastUpdated, "dd/MM/yyyy 'às' HH:mm:ss", { locale: ptBR })}
+                Última atualização: {format(order.updatedAt ? parseISO(order.updatedAt) : lastUpdated, "dd/MM/yyyy 'às' HH:mm:ss", { locale: ptBR })}
             </p>
             <Button onClick={() => router.push('/novo-pedido')} variant="link">Fazer Novo Pedido</Button>
           </CardFooter>
@@ -201,3 +234,4 @@ export default function OrderStatusPage() {
     </div>
   );
 }
+

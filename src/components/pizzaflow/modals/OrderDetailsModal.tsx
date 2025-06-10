@@ -20,6 +20,7 @@ import { Badge } from '@/components/ui/badge';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { MessageSquare } from 'lucide-react';
 
 interface OrderDetailsModalProps {
   order: Order | null;
@@ -35,9 +36,12 @@ const OrderDetailsModal: FC<OrderDetailsModalProps> = ({ order, isOpen, onClose,
     onUpdateOrder({ ...order, paymentType: value as PaymentType });
   };
   
-  const handleNotesChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+  const handleGeneralNotesChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
      onUpdateOrder({ ...order, notes: e.target.value });
   };
+
+  // Note: Item-specific notes are not editable in this modal for simplicity,
+  // but they are displayed. They would be edited on the new order page or a more complex order edit screen.
 
   const confirmPaymentAndClose = () => {
     if (order.paymentType) {
@@ -66,17 +70,28 @@ const OrderDetailsModal: FC<OrderDetailsModalProps> = ({ order, isOpen, onClose,
             <Label htmlFor="customerAddress" className="text-right">Endereço</Label>
             <Input id="customerAddress" value={order.customerAddress} readOnly className="col-span-3" />
           </div>
+          {order.customerReferencePoint && (
+             <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="customerReferencePoint" className="text-right">Referência</Label>
+                <Input id="customerReferencePoint" value={order.customerReferencePoint} readOnly className="col-span-3" />
+            </div>
+          )}
           <div className="grid grid-cols-4 items-center gap-4">
             <Label htmlFor="createdAt" className="text-right">Hora do Pedido</Label>
             <Input id="createdAt" value={format(parseISO(order.createdAt), 'PPP p', { locale: ptBR })} readOnly className="col-span-3" />
           </div>
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label className="text-right">Itens</Label>
-            <div className="col-span-3 space-y-1">
+          <div className="grid grid-cols-4 items-start gap-4">
+            <Label className="text-right pt-1">Itens</Label>
+            <div className="col-span-3 space-y-2">
               {order.items.map(item => (
-                <div key={item.id} className="flex justify-between text-sm">
-                  <span>{item.name} x {item.quantity}</span>
-                  <span>R$ {(item.price * item.quantity).toFixed(2).replace('.',',')}</span>
+                <div key={item.id} className="text-sm border-b pb-1 last:border-b-0">
+                  <div className="flex justify-between">
+                    <span>{item.name} x {item.quantity}</span>
+                    <span>R$ {(item.price * item.quantity).toFixed(2).replace('.',',')}</span>
+                  </div>
+                  {item.itemNotes && (
+                    <p className="text-xs text-muted-foreground italic mt-0.5">Obs: {item.itemNotes}</p>
+                  )}
                 </div>
               ))}
             </div>
@@ -98,14 +113,15 @@ const OrderDetailsModal: FC<OrderDetailsModalProps> = ({ order, isOpen, onClose,
             </div>
           )}
           
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="notes" className="text-right">Observações</Label>
+          <div className="grid grid-cols-4 items-start gap-4">
+            <Label htmlFor="generalNotes" className="text-right pt-1">Observações Gerais</Label>
             <Textarea 
-              id="notes" 
+              id="generalNotes" 
               value={order.notes || ''} 
-              onChange={handleNotesChange}
+              onChange={handleGeneralNotesChange}
               className="col-span-3" 
-              placeholder="Adicione observações para este pedido..."
+              placeholder="Adicione observações gerais para este pedido..."
+              rows={2}
             />
           </div>
 
@@ -124,13 +140,13 @@ const OrderDetailsModal: FC<OrderDetailsModalProps> = ({ order, isOpen, onClose,
                   <SelectContent>
                     <SelectItem value="Dinheiro">Dinheiro</SelectItem>
                     <SelectItem value="Cartão">Cartão</SelectItem>
-                    <SelectItem value="Online">Online</SelectItem>
+                    <SelectItem value="Online">Online (PIX)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="paymentStatus" className="text-right">Status Pagamento</Label>
-                 <Badge className={`col-span-3 w-fit ${order.paymentStatus === 'Pago' ? 'bg-green-500' : 'bg-yellow-500'}`}>
+                <Label htmlFor="paymentStatus" className="text-right">Status Pagamento</Label>                 
+                <Badge className={`col-span-3 w-fit ${order.paymentStatus === 'Pago' ? 'bg-green-500 hover:bg-green-600' : 'bg-yellow-500 hover:bg-yellow-600'}`}>
                   {order.paymentStatus}
                 </Badge>
               </div>
@@ -139,7 +155,9 @@ const OrderDetailsModal: FC<OrderDetailsModalProps> = ({ order, isOpen, onClose,
           {order.optimizedRoute && (
              <div className="grid grid-cols-1 gap-2">
                 <Label htmlFor="optimizedRoute" className="font-semibold">Rota Otimizada</Label>
-                <p id="optimizedRoute" className="text-sm p-2 bg-muted rounded-md">{order.optimizedRoute}</p>
+                <a href={order.optimizedRoute} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline break-all">
+                    {order.optimizedRoute}
+                </a>
               </div>
           )}
         </div>
@@ -158,3 +176,4 @@ const OrderDetailsModal: FC<OrderDetailsModalProps> = ({ order, isOpen, onClose,
 };
 
 export default OrderDetailsModal;
+

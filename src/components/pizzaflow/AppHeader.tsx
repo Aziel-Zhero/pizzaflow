@@ -1,11 +1,20 @@
 
 "use client";
 import type { FC } from 'react';
-import { Pizza, BarChart3, ListOrdered, PlusCircle } from 'lucide-react';
+import { Pizza, BarChart3, ListOrdered, PlusCircle, LayoutDashboard, Utensils } from 'lucide-react';
 import SplitText from '@/components/common/SplitText';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+
 
 interface AppHeaderProps {
   appName: string;
@@ -37,7 +46,7 @@ const AppHeader: FC<AppHeaderProps> = ({ appName }) => {
           <Button variant={pathname === '/novo-pedido' ? "default" : "outline"} size="sm" asChild>
             <Link href="/novo-pedido">
               <PlusCircle className="mr-2 h-4 w-4" />
-              Novo Pedido
+              Novo Pedido (Cliente)
             </Link>
           </Button>
           <Button variant={pathname === '/' ? "secondary" : "outline"} size="sm" asChild>
@@ -52,6 +61,23 @@ const AppHeader: FC<AppHeaderProps> = ({ appName }) => {
               Dashboard
             </Link>
           </Button>
+           <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm">
+                <LayoutDashboard className="mr-2 h-4 w-4" /> Admin
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuLabel>Gerenciamento</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem asChild>
+                 <Link href="/admin/cardapio">
+                  <Utensils className="mr-2 h-4 w-4" /> Cardápio
+                </Link>
+              </DropdownMenuItem>
+              {/* Adicionar mais itens de admin aqui no futuro */}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </nav>
       </div>
     </header>

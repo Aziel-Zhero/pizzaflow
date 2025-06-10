@@ -1,3 +1,4 @@
+
 import type {NextConfig} from 'next';
 
 const nextConfig: NextConfig = {
@@ -16,6 +17,7 @@ const nextConfig: NextConfig = {
         port: '',
         pathname: '/**',
       },
+      // You might want to add other allowed image hostnames here if you use other services
     ],
   },
 };

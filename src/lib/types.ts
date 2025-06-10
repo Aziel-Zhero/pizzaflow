@@ -1,6 +1,6 @@
 
 export type OrderStatus = "Pendente" | "Em Preparo" | "Aguardando Retirada" | "Saiu para Entrega" | "Entregue" | "Cancelado";
-export type PaymentType = "Dinheiro" | "Cartão" | "Online" | "";
+export type PaymentType = "Dinheiro" | "Cartão" | "Online" | ""; // Online pode ser PIX
 export type PaymentStatus = "Pendente" | "Pago";
 
 export interface OrderItem {
@@ -14,6 +14,8 @@ export interface Order {
   id: string;
   customerName: string;
   customerAddress: string;
+  customerCep?: string;
+  customerReferencePoint?: string;
   items: OrderItem[];
   totalAmount: number;
   status: OrderStatus;
@@ -48,12 +50,32 @@ export interface DashboardAnalyticsData {
   dailyRevenue: DailyRevenue[];
 }
 
-// For customer order page
+// For customer order page and menu management
 export interface MenuItem {
   id: string;
   name: string;
   price: number;
   category: string; // e.g., "Pizzas Salgadas", "Pizzas Doces", "Bebidas"
   description?: string;
-  imageUrl?: string; // Optional image URL
+  imageUrl?: string; // Optional image URL for the menu item
+}
+
+// Data for submitting a new order from the client page
+export interface NewOrderClientData {
+    customerName: string;
+    customerAddress: string;
+    customerCep?: string;
+    customerReferencePoint?: string;
+    items: OrderItem[];
+    paymentType: PaymentType;
+    notes?: string;
+}
+
+// For CEP API mock response
+export interface CepAddress {
+  street: string;
+  neighborhood: string;
+  city: string;
+  state: string;
+  fullAddress?: string; // Combined address for convenience
 }

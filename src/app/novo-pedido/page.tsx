@@ -2,9 +2,10 @@
 "use client";
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import AppHeader from '@/components/pizzaflow/AppHeader';
-import type { MenuItem, OrderItem, PaymentType } from '@/lib/types';
-import { getAvailableMenuItems, addNewOrder } from '@/app/actions';
+import type { MenuItem, OrderItem, PaymentType, CepAddress } from '@/lib/types';
+import { getAvailableMenuItems, addNewOrder, fetchAddressFromCep } from '@/app/actions';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,24 +13,28 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, ShoppingCart, Trash2, PlusCircle, MinusCircle, Send } from 'lucide-react';
+import { Loader2, ShoppingCart, Trash2, PlusCircle, MinusCircle, Send, Search, CreditCard, DollarSign, Smartphone } from 'lucide-react';
 import SplitText from '@/components/common/SplitText';
-import Image from 'next/image'; // For menu item images
+import Image from 'next/image';
 
 const PIZZERIA_NAME = "Pizzaria Planeta";
 
 interface CartItem extends OrderItem {
-  // Inherits id, name, quantity, price from OrderItem
+  imageUrl?: string;
 }
 
 export default function NewOrderPage() {
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [isLoadingMenu, setIsLoadingMenu] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isFetchingCep, setIsFetchingCep] = useState(false);
   const { toast } = useToast();
+  const router = useRouter();
 
   const [customerName, setCustomerName] = useState('');
+  const [customerCep, setCustomerCep] = useState('');
   const [customerAddress, setCustomerAddress] = useState('');
+  const [customerReferencePoint, setCustomerReferencePoint] = useState('');
   const [paymentType, setPaymentType] = useState<PaymentType | ''>('');
   const [notes, setNotes] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -49,6 +54,31 @@ export default function NewOrderPage() {
     fetchMenu();
   }, [toast]);
 
+  const handleCepSearch = async () => {
+    if (!customerCep.trim()) {
+      toast({ title: "CEP Inválido", description: "Por favor, insira um CEP.", variant: "destructive" });
+      return;
+    }
+    setIsFetchingCep(true);
+    try {
+      const addressResult = await fetchAddressFromCep(customerCep);
+      if (addressResult && addressResult.fullAddress) {
+        setCustomerAddress(addressResult.fullAddress);
+        toast({ title: "Endereço Encontrado!", description: "Endereço preenchido com base no CEP.", variant: "default" });
+      } else if (addressResult) {
+         setCustomerAddress(`${addressResult.street || ''}, ${addressResult.neighborhood || ''}, ${addressResult.city || ''} - ${addressResult.state || ''}`);
+         toast({ title: "Endereço Parcial", description: "Complete o número e complemento.", variant: "default" });
+      }
+      else {
+        toast({ title: "CEP não encontrado", description: "Não foi possível encontrar o endereço para este CEP. Por favor, digite manualmente.", variant: "destructive" });
+      }
+    } catch (error) {
+      toast({ title: "Erro ao Buscar CEP", description: "Ocorreu um problema ao buscar o CEP.", variant: "destructive" });
+    } finally {
+      setIsFetchingCep(false);
+    }
+  };
+
   const addToCart = (item: MenuItem) => {
     setCart(prevCart => {
       const existingItem = prevCart.find(cartItem => cartItem.id === item.id);
@@ -57,7 +87,7 @@ export default function NewOrderPage() {
           cartItem.id === item.id ? { ...cartItem, quantity: cartItem.quantity + 1 } : cartItem
         );
       }
-      return [...prevCart, { id: item.id, name: item.name, price: item.price, quantity: 1 }];
+      return [...prevCart, { id: item.id, name: item.name, price: item.price, quantity: 1, imageUrl: item.imageUrl }];
     });
   };
 
@@ -66,7 +96,7 @@ export default function NewOrderPage() {
       const updatedCart = prevCart.map(item =>
         item.id === itemId ? { ...item, quantity: Math.max(1, item.quantity + change) } : item
       );
-      return updatedCart.filter(item => item.quantity > 0); // Remove if quantity is 0 or less
+      return updatedCart.filter(item => item.quantity > 0);
     });
   };
   
@@ -96,15 +126,20 @@ export default function NewOrderPage() {
       const orderData = {
         customerName,
         customerAddress,
+        customerCep,
+        customerReferencePoint,
         items: cart.map(ci => ({ id: ci.id, name: ci.name, quantity: ci.quantity, price: ci.price })),
         paymentType,
         notes,
       };
       const newOrder = await addNewOrder(orderData);
-      toast({ title: "Pedido Enviado!", description: `Seu pedido ${newOrder.id} foi recebido com sucesso.`, variant: "default" });
-      // Reset form
+      toast({ title: "Pedido Enviado!", description: `Seu pedido ${newOrder.id} foi recebido. Acompanhe o status.`, variant: "default" });
+      router.push(`/pedido/${newOrder.id}/status`); // Redirect to status page
+      // Clear form only after successful redirect potentially, or leave as is.
       setCustomerName('');
+      setCustomerCep('');
       setCustomerAddress('');
+      setCustomerReferencePoint('');
       setPaymentType('');
       setNotes('');
       setCart([]);
@@ -116,7 +151,6 @@ export default function NewOrderPage() {
   };
 
   const menuCategories = Array.from(new Set(menuItems.map(item => item.category)));
-
 
   return (
     <div className="flex flex-col min-h-screen bg-background">
@@ -130,7 +164,6 @@ export default function NewOrderPage() {
         />
 
         <form onSubmit={handleSubmitOrder} className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Coluna de Informações do Cliente e Cardápio */}
           <div className="lg:col-span-2 space-y-6">
             <Card className="shadow-lg">
               <CardHeader>
@@ -141,13 +174,28 @@ export default function NewOrderPage() {
                   <Label htmlFor="customerName">Nome Completo</Label>
                   <Input id="customerName" value={customerName} onChange={e => setCustomerName(e.target.value)} required />
                 </div>
-                <div>
-                  <Label htmlFor="customerAddress">Endereço Completo (com bairro, cidade, CEP)</Label>
-                  <Input id="customerAddress" value={customerAddress} onChange={e => setCustomerAddress(e.target.value)} required />
+                <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2 items-end">
+                    <div>
+                        <Label htmlFor="customerCep">CEP</Label>
+                        <Input id="customerCep" value={customerCep} onChange={e => setCustomerCep(e.target.value)} placeholder="Ex: 01001-000" />
+                    </div>
+                    <Button type="button" onClick={handleCepSearch} disabled={isFetchingCep} className="w-full sm:w-auto">
+                        {isFetchingCep ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
+                        Buscar Endereço
+                    </Button>
                 </div>
                 <div>
-                  <Label htmlFor="notes">Observações (opcional)</Label>
-                  <Textarea id="notes" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Ex: Sem cebola, ponto da carne, etc."/>
+                  <Label htmlFor="customerAddress">Endereço Completo (Rua, Número, Bairro, Cidade - UF)</Label>
+                  <Input id="customerAddress" value={customerAddress} onChange={e => setCustomerAddress(e.target.value)} required 
+                         placeholder="Será preenchido pelo CEP ou digite manualmente"/>
+                </div>
+                <div>
+                  <Label htmlFor="customerReferencePoint">Ponto de Referência (opcional)</Label>
+                  <Input id="customerReferencePoint" value={customerReferencePoint} onChange={e => setCustomerReferencePoint(e.target.value)} placeholder="Ex: Próximo ao mercado X, portão azul"/>
+                </div>
+                <div>
+                  <Label htmlFor="notes">Observações do Pedido (opcional)</Label>
+                  <Textarea id="notes" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Ex: Sem cebola, pizza bem passada, etc."/>
                 </div>
               </CardContent>
             </Card>
@@ -170,22 +218,29 @@ export default function NewOrderPage() {
                         <h3 className="text-xl font-semibold text-secondary-foreground mb-3">{category}</h3>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           {menuItems.filter(item => item.category === category).map(item => (
-                            <Card key={item.id} className="flex flex-col">
+                            <Card key={item.id} className="flex flex-col overflow-hidden">
                               {item.imageUrl && (
-                                <div className="relative w-full h-40">
-                                  <Image src={item.imageUrl} alt={item.name} layout="fill" objectFit="cover" className="rounded-t-md" data-ai-hint="food pizza" />
+                                <div className="relative w-full h-40 bg-muted">
+                                  <Image 
+                                    src={item.imageUrl} 
+                                    alt={item.name} 
+                                    layout="fill" 
+                                    objectFit="cover" 
+                                    className="rounded-t-md" 
+                                    data-ai-hint={`${item.category === "Pizzas Salgadas" || item.category === "Pizzas Doces" ? "food pizza" : item.category === "Bebidas" ? "drink beverage" : "food item"}`}
+                                  />
                                 </div>
                               )}
                               <CardHeader className="pb-2">
                                 <CardTitle className="text-lg">{item.name}</CardTitle>
-                                {item.description && <CardDescription className="text-xs">{item.description}</CardDescription>}
+                                {item.description && <CardDescription className="text-xs mt-1">{item.description}</CardDescription>}
                               </CardHeader>
                               <CardContent className="flex-grow">
                                 <p className="text-lg font-semibold text-primary">R$ {item.price.toFixed(2).replace('.', ',')}</p>
                               </CardContent>
                               <CardFooter>
                                 <Button type="button" onClick={() => addToCart(item)} className="w-full">
-                                  <PlusCircle className="mr-2 h-4 w-4" /> Adicionar ao Carrinho
+                                  <PlusCircle className="mr-2 h-4 w-4" /> Adicionar
                                 </Button>
                               </CardFooter>
                             </Card>
@@ -199,9 +254,8 @@ export default function NewOrderPage() {
             </Card>
           </div>
 
-          {/* Coluna do Carrinho e Pagamento */}
           <div className="lg:col-span-1 space-y-6">
-            <Card className="shadow-lg sticky top-20"> {/* Sticky cart */}
+            <Card className="shadow-lg sticky top-20">
               <CardHeader>
                 <CardTitle className="flex items-center">
                   <ShoppingCart className="mr-2 h-6 w-6 text-primary" /> Seu Pedido
@@ -214,19 +268,22 @@ export default function NewOrderPage() {
                   <div className="max-h-[40vh] overflow-y-auto pr-2 space-y-3">
                     {cart.map(item => (
                       <div key={item.id} className="flex items-center justify-between p-2 border rounded-md">
-                        <div>
-                          <p className="font-medium">{item.name}</p>
-                          <p className="text-sm text-muted-foreground">R$ {item.price.toFixed(2).replace('.', ',')} x {item.quantity}</p>
-                        </div>
                         <div className="flex items-center gap-2">
-                           <Button type="button" variant="ghost" size="icon" onClick={() => updateQuantity(item.id, -1)} disabled={item.quantity <= 1}>
-                            <MinusCircle className="h-5 w-5" />
+                           {item.imageUrl && <Image src={item.imageUrl} alt={item.name} width={40} height={40} className="rounded-sm object-cover" data-ai-hint="food item"/>}
+                            <div>
+                                <p className="font-medium text-sm">{item.name}</p>
+                                <p className="text-xs text-muted-foreground">R$ {item.price.toFixed(2).replace('.', ',')} x {item.quantity}</p>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-1">
+                           <Button type="button" variant="ghost" size="icon" onClick={() => updateQuantity(item.id, -1)} disabled={item.quantity <= 1} className="h-7 w-7">
+                            <MinusCircle className="h-4 w-4" />
                           </Button>
-                          <span>{item.quantity}</span>
-                          <Button type="button" variant="ghost" size="icon" onClick={() => updateQuantity(item.id, 1)}>
-                            <PlusCircle className="h-5 w-5" />
+                          <span className="w-6 text-center">{item.quantity}</span>
+                          <Button type="button" variant="ghost" size="icon" onClick={() => updateQuantity(item.id, 1)} className="h-7 w-7">
+                            <PlusCircle className="h-4 w-4" />
                           </Button>
-                          <Button type="button" variant="destructive" size="icon" onClick={() => removeFromCart(item.id)}>
+                          <Button type="button" variant="ghost" size="icon" onClick={() => removeFromCart(item.id)} className="text-destructive h-7 w-7">
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>
@@ -249,11 +306,18 @@ export default function NewOrderPage() {
                       <SelectValue placeholder="Selecione..." />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Dinheiro">Dinheiro (na entrega/retirada)</SelectItem>
-                      <SelectItem value="Cartão">Cartão (na entrega/retirada)</SelectItem>
-                      <SelectItem value="Online">Online (PIX/Link de Pagamento - a combinar)</SelectItem>
+                      <SelectItem value="Dinheiro"><div className="flex items-center gap-2"><DollarSign className="h-4 w-4 text-green-600"/> Dinheiro (na entrega/retirada)</div></SelectItem>
+                      <SelectItem value="Cartão"><div className="flex items-center gap-2"><CreditCard className="h-4 w-4 text-blue-600"/> Cartão (na entrega/retirada)</div></SelectItem>
+                      <SelectItem value="Online"><div className="flex items-center gap-2"><Smartphone className="h-4 w-4 text-purple-600"/> PIX (Online - a combinar)</div></SelectItem>
                     </SelectContent>
                   </Select>
+                  {paymentType === 'Cartão' && (
+                    <div className="flex gap-1 mt-2 justify-center">
+                        <Image src="https://placehold.co/40x25.png/000000/FFFFFF?text=Visa" alt="Visa" width={40} height={25} data-ai-hint="visa logo" />
+                        <Image src="https://placehold.co/40x25.png/E0E0E0/000000?text=Master" alt="Mastercard" width={40} height={25} data-ai-hint="mastercard logo" />
+                        <Image src="https://placehold.co/40x25.png/FF6C00/FFFFFF?text=Elo" alt="Elo" width={40} height={25} data-ai-hint="elo logo" />
+                    </div>
+                  )}
                 </div>
               </CardContent>
               <CardFooter>

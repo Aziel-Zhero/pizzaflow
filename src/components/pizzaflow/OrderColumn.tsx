@@ -1,3 +1,4 @@
+
 "use client";
 import type { FC, ReactNode } from 'react';
 import type { Order } from '@/lib/types';
@@ -41,7 +42,7 @@ const OrderColumn: FC<OrderColumnProps> = ({
         </div>
       )}
       {orders.length === 0 ? (
-        <p className="text-muted-foreground text-center py-8 flex-grow flex items-center justify-center">{title ? "No orders here yet." : "No completed orders."}</p>
+        <p className="text-muted-foreground text-center py-8 flex-grow flex items-center justify-center">{title ? "Nenhum pedido aqui ainda." : "Nenhum pedido concluído."}</p>
       ) : (
         <ScrollArea className="flex-grow h-0 min-h-[200px] pr-2"> {/* flex-grow and h-0 for scroll area to fill space */}
           <div className="space-y-4">

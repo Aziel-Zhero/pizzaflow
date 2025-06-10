@@ -1,3 +1,4 @@
+
 'use server';
 
 /**
@@ -12,13 +13,13 @@ import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
 
 const OptimizeDeliveryRouteInputSchema = z.object({
-  pizzeriaAddress: z.string().describe('The address of the pizzeria.'),
-  customerAddress: z.string().describe('The delivery address of the customer.'),
+  pizzeriaAddress: z.string().describe('O endereço da pizzaria.'),
+  customerAddress: z.string().describe('O endereço de entrega do cliente.'),
 });
 export type OptimizeDeliveryRouteInput = z.infer<typeof OptimizeDeliveryRouteInputSchema>;
 
 const OptimizeDeliveryRouteOutputSchema = z.object({
-  optimizedRoute: z.string().describe('The optimized delivery route from the pizzeria to the customer.'),
+  optimizedRoute: z.string().describe('A rota de entrega otimizada da pizzaria para o cliente.'),
 });
 export type OptimizeDeliveryRouteOutput = z.infer<typeof OptimizeDeliveryRouteOutputSchema>;
 
@@ -29,17 +30,17 @@ export async function optimizeDeliveryRoute(input: OptimizeDeliveryRouteInput): 
 const getRoute = ai.defineTool(
   {
     name: 'getRoute',
-    description: 'Returns the best route from a starting address to a destination address using Google Maps API.',
+    description: 'Retorna a melhor rota de um endereço de partida para um endereço de destino usando a API do Google Maps.',
     inputSchema: z.object({
-      startAddress: z.string().describe('The starting address for the route.'),
-      endAddress: z.string().describe('The destination address for the route.'),
+      startAddress: z.string().describe('O endereço de partida para a rota.'),
+      endAddress: z.string().describe('O endereço de destino para a rota.'),
     }),
     outputSchema: z.string(),
   },
   async (input) => {
-    // TODO: Implement Google Maps API integration here to get the route
-    // This is a placeholder; replace with actual API call.
-    return `Optimized route from ${input.startAddress} to ${input.endAddress} using Google Maps API.`;
+    // TODO: Implementar integração com a API do Google Maps aqui para obter a rota.
+    // Isto é um placeholder; substitua pela chamada real da API.
+    return `Rota otimizada de ${input.startAddress} para ${input.endAddress} usando a API do Google Maps. (Simulado)`;
   }
 );
 
@@ -48,14 +49,14 @@ const prompt = ai.definePrompt({
   input: {schema: OptimizeDeliveryRouteInputSchema},
   output: {schema: OptimizeDeliveryRouteOutputSchema},
   tools: [getRoute],
-  prompt: `You are a route optimization expert for pizza delivery.
+  prompt: `Você é um especialista em otimização de rotas para entrega de pizzas.
 
-  Given the pizzeria address and the customer address, use the getRoute tool to find the optimized route.
+  Dado o endereço da pizzaria e o endereço do cliente, use a ferramenta getRoute para encontrar a rota otimizada.
 
-Pizzeria Address: {{{pizzeriaAddress}}}
-Customer Address: {{{customerAddress}}}
+Endereço da Pizzaria: {{{pizzeriaAddress}}}
+Endereço do Cliente: {{{customerAddress}}}
 
-Return the optimized route.`,
+Retorne a rota otimizada.`,
 });
 
 const optimizeDeliveryRouteFlow = ai.defineFlow(

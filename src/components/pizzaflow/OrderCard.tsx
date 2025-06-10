@@ -1,3 +1,4 @@
+
 "use client";
 
 import type { FC } from 'react';
@@ -5,8 +6,9 @@ import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/componen
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import type { Order, OrderStatus } from '@/lib/types';
-import { Clock, Package,DollarSign, User, MapPin, ListOrdered, Info } from 'lucide-react';
+import { Clock, Package,DollarSign, User, MapPin, ListOrdered, Info, CheckCircle, Truck, Utensils } from 'lucide-react';
 import { formatDistanceToNow, parseISO } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 
 interface OrderCardProps {
   order: Order;
@@ -18,12 +20,12 @@ interface OrderCardProps {
 }
 
 const statusColors: Record<OrderStatus, string> = {
-  Pending: 'bg-yellow-500 hover:bg-yellow-600',
-  Preparing: 'bg-blue-500 hover:bg-blue-600',
-  'Waiting Pickup': 'bg-orange-500 hover:bg-orange-600',
-  'Out for Delivery': 'bg-purple-500 hover:bg-purple-600',
-  Delivered: 'bg-green-500 hover:bg-green-600',
-  Cancelled: 'bg-red-500 hover:bg-red-600',
+  Pendente: 'bg-yellow-500 hover:bg-yellow-600',
+  "Em Preparo": 'bg-blue-500 hover:bg-blue-600',
+  "Aguardando Retirada": 'bg-orange-500 hover:bg-orange-600',
+  "Saiu para Entrega": 'bg-purple-500 hover:bg-purple-600',
+  Entregue: 'bg-green-500 hover:bg-green-600',
+  Cancelado: 'bg-red-500 hover:bg-red-600',
 };
 
 const OrderCard: FC<OrderCardProps> = ({
@@ -34,7 +36,7 @@ const OrderCard: FC<OrderCardProps> = ({
   onMarkDelivered,
   onViewDetails,
 }) => {
-  const timeAgo = formatDistanceToNow(parseISO(order.createdAt), { addSuffix: true });
+  const timeAgo = formatDistanceToNow(parseISO(order.createdAt), { addSuffix: true, locale: ptBR });
 
   return (
     <Card className="shadow-lg hover:shadow-xl transition-shadow duration-300">
@@ -59,37 +61,37 @@ const OrderCard: FC<OrderCardProps> = ({
         </div>
         <div className="flex items-center">
           <ListOrdered className="h-4 w-4 mr-2 text-primary" />
-          <span>{order.items.reduce((sum, item) => sum + item.quantity, 0)} items</span>
+          <span>{order.items.reduce((sum, item) => sum + item.quantity, 0)} itens</span>
         </div>
         <div className="flex items-center font-semibold">
           <DollarSign className="h-4 w-4 mr-2 text-primary" />
-          <span>${order.totalAmount.toFixed(2)}</span>
+          <span>R$ {order.totalAmount.toFixed(2).replace('.',',')}</span>
         </div>
       </CardContent>
       <CardFooter className="flex flex-col sm:flex-row gap-2 justify-end pt-2">
         {onViewDetails && (
           <Button variant="outline" size="sm" onClick={() => onViewDetails(order)}>
-            <Info className="mr-2 h-4 w-4" /> Details
+            <Info className="mr-2 h-4 w-4" /> Detalhes
           </Button>
         )}
-        {order.status === 'Pending' && onTakeOrder && (
+        {order.status === 'Pendente' && onTakeOrder && (
           <Button size="sm" onClick={() => onTakeOrder(order.id)} className="bg-accent hover:bg-accent/90 text-accent-foreground">
-            <Package className="mr-2 h-4 w-4" /> Take Order
+            <Package className="mr-2 h-4 w-4" /> Aceitar Pedido
           </Button>
         )}
-        {order.status === 'Preparing' && onReadyForPickup && (
-          <Button size="sm" onClick={() => onReadyForPickup(order.id)} className="bg-blue-500 hover:bg-blue-600 text-white">
-            Ready for Pickup
+        {order.status === 'Em Preparo' && onReadyForPickup && (
+          <Button size="sm" onClick={() => onReadyForPickup(order.id)} className="bg-blue-600 hover:bg-blue-700 text-white">
+            <Utensils className="mr-2 h-4 w-4" /> Pronto para Retirada
           </Button>
         )}
-        {order.status === 'Waiting Pickup' && onOptimizeRoute && (
-          <Button size="sm" onClick={() => onOptimizeRoute(order)} className="bg-orange-500 hover:bg-orange-600 text-white">
-            Optimize & Assign
+        {order.status === 'Aguardando Retirada' && onOptimizeRoute && (
+          <Button size="sm" onClick={() => onOptimizeRoute(order)} className="bg-orange-600 hover:bg-orange-700 text-white">
+             <Truck className="mr-2 h-4 w-4" /> Otimizar e Designar
           </Button>
         )}
-        {order.status === 'Out for Delivery' && onMarkDelivered && (
-          <Button size="sm" onClick={() => onMarkDelivered(order)} className="bg-green-500 hover:bg-green-600 text-white">
-            Mark Delivered
+        {order.status === 'Saiu para Entrega' && onMarkDelivered && (
+          <Button size="sm" onClick={() => onMarkDelivered(order)} className="bg-green-600 hover:bg-green-700 text-white">
+            <CheckCircle className="mr-2 h-4 w-4" /> Marcar como Entregue
           </Button>
         )}
       </CardFooter>

@@ -1,13 +1,20 @@
+
 "use client";
 import type { FC } from 'react';
-import { Pizza } from 'lucide-react';
+import { Pizza, BarChart3, ListOrdered } from 'lucide-react';
 import SplitText from '@/components/common/SplitText';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 interface AppHeaderProps {
   appName: string;
 }
 
 const AppHeader: FC<AppHeaderProps> = ({ appName }) => {
+  const pathname = usePathname();
+
   return (
     <header className="bg-card border-b border-border shadow-md sticky top-0 z-40">
       <div className="container mx-auto px-4 py-3 flex items-center justify-between">
@@ -25,7 +32,24 @@ const AppHeader: FC<AppHeaderProps> = ({ appName }) => {
             textAlign="left"
           />
         </div>
-        {/* Future additions like user profile, theme toggle can go here */}
+        <nav className="flex items-center gap-2">
+          <Link href="/" passHref legacyBehavior>
+            <Button variant={pathname === '/' ? "default" : "outline"} size="sm" asChild>
+              <a>
+                <ListOrdered className="mr-2 h-4 w-4" />
+                Pedidos
+              </a>
+            </Button>
+          </Link>
+          <Link href="/dashboard" passHref legacyBehavior>
+             <Button variant={pathname === '/dashboard' ? "default" : "outline"} size="sm" asChild>
+              <a>
+                <BarChart3 className="mr-2 h-4 w-4" />
+                Dashboard
+              </a>
+            </Button>
+          </Link>
+        </nav>
       </div>
     </header>
   );

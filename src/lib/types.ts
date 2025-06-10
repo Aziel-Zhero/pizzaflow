@@ -1,7 +1,7 @@
 
-export type OrderStatus = "Pending" | "Preparing" | "Waiting Pickup" | "Out for Delivery" | "Delivered" | "Cancelled";
-export type PaymentType = "Cash" | "Card" | "Online" | "";
-export type PaymentStatus = "Pending" | "Paid";
+export type OrderStatus = "Pendente" | "Em Preparo" | "Aguardando Retirada" | "Saiu para Entrega" | "Entregue" | "Cancelado";
+export type PaymentType = "Dinheiro" | "Cartão" | "Online" | "";
+export type PaymentStatus = "Pendente" | "Pago";
 
 export interface OrderItem {
   id: string;
@@ -26,4 +26,24 @@ export interface Order {
   optimizedRoute?: string;
 }
 
-export const PIZZERIA_ADDRESS = "Pizza Planet HQ, 1 Cosmic Way, Pizzaria City, PC 54321";
+export const PIZZERIA_ADDRESS = "Pizzaria Planeta - Central, Av. Sabores Celestiais 123, Cidade Astral, CA 45678";
+
+export interface DailyRevenue {
+  date: string; // Format: "dd/MM" or a more structured date
+  name: string; // Day name or date string for label
+  Receita: number;
+}
+
+export interface OrdersByStatusData {
+  name: OrderStatus; // Status name
+  value: number; // Count of orders
+  fill: string; // Color for the pie chart segment
+}
+
+export interface DashboardAnalyticsData {
+  totalOrders: number;
+  totalRevenue: number;
+  averageOrderValue: number;
+  ordersByStatus: OrdersByStatusData[];
+  dailyRevenue: DailyRevenue[];
+}

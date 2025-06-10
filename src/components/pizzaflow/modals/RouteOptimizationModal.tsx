@@ -1,3 +1,4 @@
+
 "use client";
 
 import type { FC } from 'react';
@@ -53,10 +54,10 @@ const RouteOptimizationModal: FC<RouteOptimizationModalProps> = ({ order, isOpen
         order.customerAddress,
       );
       setOptimizedRoute(result.optimizedRoute);
-      toast({ title: "Route Optimized!", description: "The delivery route has been calculated." });
+      toast({ title: "Rota Otimizada!", description: "A rota de entrega foi calculada." });
     } catch (error) {
-      console.error("Error optimizing route:", error);
-      toast({ title: "Error", description: "Failed to optimize route. Please try again.", variant: "destructive" });
+      console.error("Erro ao otimizar rota:", error);
+      toast({ title: "Erro", description: "Falha ao otimizar rota. Por favor, tente novamente.", variant: "destructive" });
     } finally {
       setIsLoading(false);
     }
@@ -64,11 +65,11 @@ const RouteOptimizationModal: FC<RouteOptimizationModalProps> = ({ order, isOpen
 
   const handleConfirmAssignment = () => {
     if (!optimizedRoute) {
-      toast({ title: "Missing Route", description: "Please optimize the route first.", variant: "destructive" });
+      toast({ title: "Rota Ausente", description: "Por favor, otimize a rota primeiro.", variant: "destructive" });
       return;
     }
     if (!deliveryPerson.trim()) {
-      toast({ title: "Missing Delivery Person", description: "Please assign a delivery person.", variant: "destructive" });
+      toast({ title: "Entregador Ausente", description: "Por favor, atribua um entregador.", variant: "destructive" });
       return;
     }
     onAssignDelivery(order.id, optimizedRoute, deliveryPerson);
@@ -79,48 +80,48 @@ const RouteOptimizationModal: FC<RouteOptimizationModalProps> = ({ order, isOpen
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="font-headline flex items-center"><MapIcon className="mr-2 h-5 w-5 text-primary"/>Optimize Delivery Route</DialogTitle>
+          <DialogTitle className="font-headline flex items-center"><MapIcon className="mr-2 h-5 w-5 text-primary"/>Otimizar Rota de Entrega</DialogTitle>
           <DialogDescription>
-            Optimize and assign delivery for order {order.id}.
+            Otimize e atribua a entrega para o pedido {order.id}.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-4">
           <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="pizzeriaAddress" className="text-right">From</Label>
+            <Label htmlFor="pizzeriaAddress" className="text-right">De</Label>
             <Input id="pizzeriaAddress" value={PIZZERIA_ADDRESS} readOnly className="col-span-3" />
           </div>
           <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="customerAddress" className="text-right">To</Label>
+            <Label htmlFor="customerAddress" className="text-right">Para</Label>
             <Input id="customerAddress" value={order.customerAddress} readOnly className="col-span-3" />
           </div>
           
           <Button onClick={handleOptimizeRoute} disabled={isLoading} className="w-full">
             {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <MapIcon className="mr-2 h-4 w-4" />}
-            {isLoading ? 'Optimizing...' : 'Get Optimized Route (AI)'}
+            {isLoading ? 'Otimizando...' : 'Obter Rota Otimizada (IA)'}
           </Button>
 
           {optimizedRoute && (
             <div className="space-y-2 mt-4">
-              <Label htmlFor="optimizedRouteResult">Optimized Route</Label>
+              <Label htmlFor="optimizedRouteResult">Rota Otimizada</Label>
               <Textarea id="optimizedRouteResult" value={optimizedRoute} readOnly rows={4} className="bg-muted" />
             </div>
           )}
           
           <div className="space-y-2 mt-4">
-            <Label htmlFor="deliveryPerson">Assign Delivery Person</Label>
+            <Label htmlFor="deliveryPerson">Atribuir Entregador(a)</Label>
             <Input 
               id="deliveryPerson" 
               value={deliveryPerson} 
               onChange={(e) => setDeliveryPerson(e.target.value)}
-              placeholder="Enter delivery person's name"
+              placeholder="Digite o nome do(a) entregador(a)"
             />
           </div>
 
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button variant="outline" onClick={onClose}>Cancelar</Button>
           <Button onClick={handleConfirmAssignment} disabled={!optimizedRoute || !deliveryPerson.trim()}>
-            Confirm & Assign Delivery
+            Confirmar e Atribuir Entrega
           </Button>
         </DialogFooter>
       </DialogContent>

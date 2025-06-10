@@ -6,7 +6,7 @@ import SplitText from '@/components/common/SplitText';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
+// import { cn } from '@/lib/utils'; // cn was not used here
 
 interface AppHeaderProps {
   appName: string;
@@ -35,18 +35,18 @@ const AppHeader: FC<AppHeaderProps> = ({ appName }) => {
         <nav className="flex items-center gap-2">
           <Link href="/">
             <Button variant={pathname === '/' ? "default" : "outline"} size="sm" asChild>
-              <a>
+              <>
                 <ListOrdered className="mr-2 h-4 w-4" />
                 Pedidos
-              </a>
+              </>
             </Button>
           </Link>
           <Link href="/dashboard">
              <Button variant={pathname === '/dashboard' ? "default" : "outline"} size="sm" asChild>
-              <a>
+              <>
                 <BarChart3 className="mr-2 h-4 w-4" />
                 Dashboard
-              </a>
+              </>
             </Button>
           </Link>
         </nav>

@@ -33,7 +33,7 @@ const AppHeader: FC<AppHeaderProps> = ({ appName }) => {
           />
         </div>
         <nav className="flex items-center gap-2">
-          <Link href="/" passHref legacyBehavior>
+          <Link href="/">
             <Button variant={pathname === '/' ? "default" : "outline"} size="sm" asChild>
               <a>
                 <ListOrdered className="mr-2 h-4 w-4" />
@@ -41,7 +41,7 @@ const AppHeader: FC<AppHeaderProps> = ({ appName }) => {
               </a>
             </Button>
           </Link>
-          <Link href="/dashboard" passHref legacyBehavior>
+          <Link href="/dashboard">
              <Button variant={pathname === '/dashboard' ? "default" : "outline"} size="sm" asChild>
               <a>
                 <BarChart3 className="mr-2 h-4 w-4" />

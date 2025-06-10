@@ -4,10 +4,11 @@
 import { useEffect, useState } from 'react';
 import AppHeader from '@/components/pizzaflow/AppHeader';
 import type { DashboardAnalyticsData, DailyRevenue, OrdersByStatusData, OrderStatus } from '@/lib/types';
-import { getDashboardAnalytics } from '@/app/actions';
+import { getDashboardAnalytics, exportOrdersToCSV } from '@/app/actions';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, TooltipProps } from 'recharts';
-import { Loader2, Package, DollarSign, ListChecks, TrendingUp, Users } from 'lucide-react';
+import { Loader2, Package, DollarSign, ListChecks, TrendingUp, Users, Download } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { ChartContainer, ChartTooltipContent } from '@/components/ui/chart';
 import type { ChartConfig } from '@/components/ui/chart';
@@ -44,6 +45,7 @@ const chartConfigOrderStatus: ChartConfig = Object.fromEntries(
 export default function AnalyticsDashboardPage() {
   const [analyticsData, setAnalyticsData] = useState<DashboardAnalyticsData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isExporting, setIsExporting] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -61,6 +63,39 @@ export default function AnalyticsDashboardPage() {
     };
     fetchData();
   }, [toast]);
+
+  const handleExportCSV = async () => {
+    setIsExporting(true);
+    try {
+      const csvData = await exportOrdersToCSV();
+      if (csvData.startsWith("Nenhum pedido")) {
+        toast({ title: "Exportar CSV", description: csvData, variant: "default" });
+        return;
+      }
+      const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement("a");
+      if (link.download !== undefined) {
+        const url = URL.createObjectURL(blob);
+        link.setAttribute("href", url);
+        const dateStamp = new Date().toISOString().split('T')[0];
+        link.setAttribute("download", `pedidos_${PIZZERIA_NAME.toLowerCase().replace(/\s+/g, '_')}_${dateStamp}.csv`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        toast({ title: "Exportação Concluída", description: "O arquivo CSV dos pedidos foi baixado." });
+      } else {
+        toast({ title: "Exportar CSV", description: "Seu navegador não suporta download direto. Tente outro.", variant: "destructive" });
+      }
+    } catch (error) {
+      console.error("Failed to export CSV:", error);
+      toast({ title: "Erro na Exportação", description: "Não foi possível gerar o arquivo CSV.", variant: "destructive" });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
 
   if (isLoading) {
     return (
@@ -91,12 +126,18 @@ export default function AnalyticsDashboardPage() {
     <div className="flex flex-col min-h-screen bg-background">
       <AppHeader appName={PIZZERIA_NAME} />
       <main className="flex-grow container mx-auto px-2 sm:px-4 py-6">
-         <SplitText 
-            text="Dashboard de Análises" 
-            as="h1" 
-            className="text-3xl font-headline font-bold text-primary mb-8"
-            textAlign='left'
-          />
+         <div className="flex justify-between items-center mb-8">
+            <SplitText 
+                text="Dashboard de Análises" 
+                as="h1" 
+                className="text-3xl font-headline font-bold text-primary"
+                textAlign='left'
+            />
+            <Button onClick={handleExportCSV} disabled={isExporting} variant="outline">
+                {isExporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+                {isExporting ? "Exportando..." : "Exportar Pedidos (CSV)"}
+            </Button>
+         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
           <Card className="shadow-lg">
@@ -140,10 +181,10 @@ export default function AnalyticsDashboardPage() {
             <CardContent className="h-[350px] w-full">
               <ChartContainer config={chartConfigDailyRevenue} className="h-full w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={analyticsData.dailyRevenue} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
+                  <BarChart data={analyticsData.dailyRevenue} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
                     <XAxis dataKey="name" tickLine={false} axisLine={false} fontSize={12} />
-                    <YAxis tickFormatter={(value) => `R$${value}`} tickLine={false} axisLine={false} fontSize={12} width={80} />
+                    <YAxis tickFormatter={(value) => `R$${value}`} tickLine={false} axisLine={false} fontSize={12} width={70} />
                     <RechartsTooltip 
                       cursor={{ fill: 'hsl(var(--muted))' }}
                       content={<ChartTooltipContent indicator="dot" />}
@@ -164,7 +205,7 @@ export default function AnalyticsDashboardPage() {
             <CardContent className="h-[350px] w-full flex items-center justify-center">
                <ChartContainer config={chartConfigOrderStatus} className="h-full w-full aspect-square">
                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
+                    <PieChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
                       <RechartsTooltip 
                          cursor={{ stroke: 'hsl(var(--border))', strokeWidth: 1 }}
                          content={<ChartTooltipContent hideLabel nameKey="name" />}
@@ -175,14 +216,14 @@ export default function AnalyticsDashboardPage() {
                         nameKey="name"
                         cx="50%"
                         cy="50%"
-                        outerRadius={120}
-                        innerRadius={50}
-                        labelLine={false}
-                        label={({ cx, cy, midAngle, innerRadius, outerRadius, percent, index, name }) => {
+                        outerRadius={100} // Ajustado para caber melhor com labels
+                        innerRadius={40} // Ajustado
+                        labelLine={true} // Habilitado para melhor visualização
+                        label={({ cx, cy, midAngle, innerRadius, outerRadius, percent, index, name, value }) => {
                           const RADIAN = Math.PI / 180;
-                          const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
-                          const x = cx + (radius + 20) * Math.cos(-midAngle * RADIAN);
-                          const y = cy + (radius + 20) * Math.sin(-midAngle * RADIAN);
+                          const radius = outerRadius + 15; // Posição do label fora da pizza
+                          const x = cx + radius * Math.cos(-midAngle * RADIAN);
+                          const y = cy + radius * Math.sin(-midAngle * RADIAN);
                           return (
                             <text
                               x={x}
@@ -190,15 +231,15 @@ export default function AnalyticsDashboardPage() {
                               fill="hsl(var(--foreground))"
                               textAnchor={x > cx ? 'start' : 'end'}
                               dominantBaseline="central"
-                              fontSize={12}
+                              fontSize={11}
                             >
-                              {`${name} (${(percent * 100).toFixed(0)}%)`}
+                              {`${name} (${value})`}
                             </text>
                           );
                         }}
                       >
                         {analyticsData.ordersByStatus.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry.fill} />
+                          <Cell key={`cell-${index}`} fill={entry.fill} stroke={entry.fill} />
                         ))}
                       </Pie>
                     </PieChart>
@@ -212,17 +253,16 @@ export default function AnalyticsDashboardPage() {
               <CardTitle>Resumo dos Status</CardTitle>
                <CardDescription>Contagem de pedidos por cada status.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-3">
-              {analyticsData.ordersByStatus.map(statusData => (
-                <div key={statusData.name} className="flex items-center justify-between">
+            <CardContent className="space-y-3 max-h-[350px] overflow-y-auto">
+              {analyticsData.ordersByStatus.length > 0 ? analyticsData.ordersByStatus.map(statusData => (
+                <div key={statusData.name} className="flex items-center justify-between p-2 rounded-md hover:bg-muted/50">
                   <div className="flex items-center">
-                    <span className="h-3 w-3 rounded-full mr-2" style={{ backgroundColor: statusData.fill }} />
+                    <span className="h-3 w-3 rounded-full mr-3 shrink-0" style={{ backgroundColor: statusData.fill }} />
                     <span className="text-sm text-muted-foreground">{statusData.name}</span>
                   </div>
                   <Badge variant="secondary" className="font-semibold">{statusData.value}</Badge>
                 </div>
-              ))}
-              {analyticsData.ordersByStatus.length === 0 && (
+              )) : (
                 <p className="text-sm text-muted-foreground text-center py-4">Nenhum pedido para exibir.</p>
               )}
             </CardContent>

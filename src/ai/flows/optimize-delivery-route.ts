@@ -19,7 +19,7 @@ const OptimizeDeliveryRouteInputSchema = z.object({
 export type OptimizeDeliveryRouteInput = z.infer<typeof OptimizeDeliveryRouteInputSchema>;
 
 const OptimizeDeliveryRouteOutputSchema = z.object({
-  optimizedRoute: z.string().describe('A rota de entrega otimizada da pizzaria para o cliente.'),
+  optimizedRoute: z.string().url().describe('A URL do Google Maps para a rota de entrega otimizada da pizzaria para o cliente.'),
 });
 export type OptimizeDeliveryRouteOutput = z.infer<typeof OptimizeDeliveryRouteOutputSchema>;
 
@@ -27,20 +27,21 @@ export async function optimizeDeliveryRoute(input: OptimizeDeliveryRouteInput): 
   return optimizeDeliveryRouteFlow(input);
 }
 
-const getRoute = ai.defineTool(
+const getRouteTool = ai.defineTool(
   {
-    name: 'getRoute',
-    description: 'Retorna a melhor rota de um endereço de partida para um endereço de destino usando a API do Google Maps.',
+    name: 'getGoogleMapsRouteUrl',
+    description: 'Gera uma URL do Google Maps com a rota de um endereço de partida para um endereço de destino.',
     inputSchema: z.object({
       startAddress: z.string().describe('O endereço de partida para a rota.'),
       endAddress: z.string().describe('O endereço de destino para a rota.'),
     }),
-    outputSchema: z.string(),
+    outputSchema: z.string().url().describe('A URL do Google Maps para a rota.'),
   },
   async (input) => {
-    // TODO: Implementar integração com a API do Google Maps aqui para obter a rota.
-    // Isto é um placeholder; substitua pela chamada real da API.
-    return `Rota otimizada de ${input.startAddress} para ${input.endAddress} usando a API do Google Maps. (Simulado)`;
+    const origin = encodeURIComponent(input.startAddress);
+    const destination = encodeURIComponent(input.endAddress);
+    // Gera a URL do Google Maps Directions
+    return `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`;
   }
 );
 
@@ -48,15 +49,15 @@ const prompt = ai.definePrompt({
   name: 'optimizeDeliveryRoutePrompt',
   input: {schema: OptimizeDeliveryRouteInputSchema},
   output: {schema: OptimizeDeliveryRouteOutputSchema},
-  tools: [getRoute],
+  tools: [getRouteTool],
   prompt: `Você é um especialista em otimização de rotas para entrega de pizzas.
 
-  Dado o endereço da pizzaria e o endereço do cliente, use a ferramenta getRoute para encontrar a rota otimizada.
+  Dado o endereço da pizzaria e o endereço do cliente, use a ferramenta getGoogleMapsRouteUrl para gerar a URL da rota otimizada no Google Maps.
 
 Endereço da Pizzaria: {{{pizzeriaAddress}}}
 Endereço do Cliente: {{{customerAddress}}}
 
-Retorne a rota otimizada.`,
+Retorne a URL da rota otimizada.`,
 });
 
 const optimizeDeliveryRouteFlow = ai.defineFlow(
@@ -67,6 +68,16 @@ const optimizeDeliveryRouteFlow = ai.defineFlow(
   },
   async input => {
     const {output} = await prompt(input);
+    // A IA deve chamar a ferramenta e preencher optimizedRoute diretamente
+    // Se a IA falhar em chamar a ferramenta ou o output for inesperado, 
+    // poderíamos adicionar uma lógica de fallback aqui, mas por enquanto confiamos na IA.
+    if (!output || !output.optimizedRoute) {
+      // Fallback manual caso a IA não use a ferramenta (improvável com o prompt atual)
+      // No entanto, o design ideal é que a IA use a ferramenta para preencher o output.
+      // A descrição do outputSchema já pede uma URL.
+      const fallbackUrl = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(input.pizzeriaAddress)}&destination=${encodeURIComponent(input.customerAddress)}&travelmode=driving`;
+      return { optimizedRoute: fallbackUrl };
+    }
     return output!;
   }
 );

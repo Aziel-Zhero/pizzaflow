@@ -14,12 +14,13 @@ import {
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
+// import { Textarea } from '@/components/ui/textarea'; // Não mais usado para a rota
 import type { Order } from '@/lib/types';
 import { PIZZERIA_ADDRESS } from '@/lib/types';
 import { optimizeRouteAction } from '@/app/actions';
-import { Loader2, MapIcon } from 'lucide-react';
+import { Loader2, MapIcon, ExternalLink } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import Link from 'next/link';
 
 interface RouteOptimizationModalProps {
   order: Order | null;
@@ -30,16 +31,18 @@ interface RouteOptimizationModalProps {
 
 const RouteOptimizationModal: FC<RouteOptimizationModalProps> = ({ order, isOpen, onClose, onAssignDelivery }) => {
   const [isLoading, setIsLoading] = useState(false);
-  const [optimizedRoute, setOptimizedRoute] = useState('');
+  const [optimizedRouteUrl, setOptimizedRouteUrl] = useState('');
   const [deliveryPerson, setDeliveryPerson] = useState('');
   const { toast } = useToast();
 
   useEffect(() => {
     if (order) {
-      setOptimizedRoute(order.optimizedRoute || '');
+      // Se a rota já for uma URL (de um pedido anterior), usa ela.
+      // Senão, busca uma nova. A IA deve retornar uma URL.
+      setOptimizedRouteUrl(order.optimizedRoute || ''); 
       setDeliveryPerson(order.deliveryPerson || '');
     } else {
-      setOptimizedRoute('');
+      setOptimizedRouteUrl('');
       setDeliveryPerson('');
     }
   }, [order]);
@@ -53,8 +56,8 @@ const RouteOptimizationModal: FC<RouteOptimizationModalProps> = ({ order, isOpen
         PIZZERIA_ADDRESS,
         order.customerAddress,
       );
-      setOptimizedRoute(result.optimizedRoute);
-      toast({ title: "Rota Otimizada!", description: "A rota de entrega foi calculada." });
+      setOptimizedRouteUrl(result.optimizedRoute); // optimizedRoute de aiOptimizeDeliveryRoute é a URL
+      toast({ title: "Rota Otimizada!", description: "A URL da rota de entrega foi gerada." });
     } catch (error) {
       console.error("Erro ao otimizar rota:", error);
       toast({ title: "Erro", description: "Falha ao otimizar rota. Por favor, tente novamente.", variant: "destructive" });
@@ -64,7 +67,7 @@ const RouteOptimizationModal: FC<RouteOptimizationModalProps> = ({ order, isOpen
   };
 
   const handleConfirmAssignment = () => {
-    if (!optimizedRoute) {
+    if (!optimizedRouteUrl) {
       toast({ title: "Rota Ausente", description: "Por favor, otimize a rota primeiro.", variant: "destructive" });
       return;
     }
@@ -72,7 +75,7 @@ const RouteOptimizationModal: FC<RouteOptimizationModalProps> = ({ order, isOpen
       toast({ title: "Entregador Ausente", description: "Por favor, atribua um entregador.", variant: "destructive" });
       return;
     }
-    onAssignDelivery(order.id, optimizedRoute, deliveryPerson);
+    onAssignDelivery(order.id, optimizedRouteUrl, deliveryPerson);
     onClose();
   };
 
@@ -100,10 +103,13 @@ const RouteOptimizationModal: FC<RouteOptimizationModalProps> = ({ order, isOpen
             {isLoading ? 'Otimizando...' : 'Obter Rota Otimizada (IA)'}
           </Button>
 
-          {optimizedRoute && (
+          {optimizedRouteUrl && (
             <div className="space-y-2 mt-4">
-              <Label htmlFor="optimizedRouteResult">Rota Otimizada</Label>
-              <Textarea id="optimizedRouteResult" value={optimizedRoute} readOnly rows={4} className="bg-muted" />
+              <Label htmlFor="optimizedRouteResult">Rota Otimizada (Google Maps)</Label>
+              <Link href={optimizedRouteUrl} target="_blank" rel="noopener noreferrer" className="flex items-center text-sm text-blue-600 hover:text-blue-800 underline break-all">
+                {optimizedRouteUrl}
+                <ExternalLink className="ml-2 h-4 w-4 shrink-0" />
+              </Link>
             </div>
           )}
           
@@ -120,7 +126,7 @@ const RouteOptimizationModal: FC<RouteOptimizationModalProps> = ({ order, isOpen
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancelar</Button>
-          <Button onClick={handleConfirmAssignment} disabled={!optimizedRoute || !deliveryPerson.trim()}>
+          <Button onClick={handleConfirmAssignment} disabled={!optimizedRouteUrl || !deliveryPerson.trim()}>
             Confirmar e Atribuir Entrega
           </Button>
         </DialogFooter>

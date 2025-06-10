@@ -24,7 +24,7 @@ const OrderColumn: FC<OrderColumnProps> = ({
   ...cardActions
 }) => {
   return (
-    <div className="bg-card p-4 rounded-lg shadow-md flex flex-col min-w-[280px] sm:min-w-[300px] max-w-full md:max-w-md lg:max-w-lg">
+    <div className="bg-card p-3 sm:p-4 rounded-lg shadow-md flex flex-col min-w-[300px] sm:min-w-[330px] md:min-w-[340px] max-w-full">
       {(title) && (
         <div className="flex items-center mb-4">
           {icon}
@@ -39,12 +39,13 @@ const OrderColumn: FC<OrderColumnProps> = ({
               to={{ opacity: 1, y: 0 }}
               textAlign="left"
             />
+           <span className="ml-auto text-sm font-medium bg-primary/10 text-primary px-2 py-0.5 rounded-full">{orders.length}</span>
         </div>
       )}
       {orders.length === 0 ? (
-        <p className="text-muted-foreground text-center py-8 flex-grow flex items-center justify-center">{title ? "Nenhum pedido aqui ainda." : "Nenhum pedido concluído."}</p>
+        <p className="text-muted-foreground text-center py-8 flex-grow flex items-center justify-center">{title ? "Nenhum pedido aqui." : "Nenhum pedido concluído."}</p>
       ) : (
-        <ScrollArea className="flex-grow h-0 min-h-[200px] pr-2"> {/* flex-grow and h-0 for scroll area to fill space */}
+        <ScrollArea className="flex-grow h-0 min-h-[300px] pr-2"> {/* Increased min-h for more content visibility */}
           <div className="space-y-4">
             {orders.map((order) => (
               <OrderCard key={order.id} order={order} {...cardActions} />

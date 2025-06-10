@@ -33,22 +33,18 @@ const AppHeader: FC<AppHeaderProps> = ({ appName }) => {
           />
         </div>
         <nav className="flex items-center gap-2">
-          <Link href="/">
-            <Button variant={pathname === '/' ? "default" : "outline"} size="sm" asChild>
-              <>
-                <ListOrdered className="mr-2 h-4 w-4" />
-                Pedidos
-              </>
-            </Button>
-          </Link>
-          <Link href="/dashboard">
-             <Button variant={pathname === '/dashboard' ? "default" : "outline"} size="sm" asChild>
-              <>
-                <BarChart3 className="mr-2 h-4 w-4" />
-                Dashboard
-              </>
-            </Button>
-          </Link>
+          <Button variant={pathname === '/' ? "default" : "outline"} size="sm" asChild>
+            <Link href="/">
+              <ListOrdered className="mr-2 h-4 w-4" />
+              Pedidos
+            </Link>
+          </Button>
+          <Button variant={pathname === '/dashboard' ? "default" : "outline"} size="sm" asChild>
+            <Link href="/dashboard">
+              <BarChart3 className="mr-2 h-4 w-4" />
+              Dashboard
+            </Link>
+          </Button>
         </nav>
       </div>
     </header>

@@ -8,7 +8,6 @@ import {
     orderItems as orderItemsTable, 
     coupons as couponsTable,
     deliveryPersons as deliveryPersonsTable 
-    // REMOVIDO: orderDisplayIdSequence - não mais exportado do schema.ts
 } from '@/lib/schema';
 import { eq, and, desc, sql, gte, lte, or, isNull, isNotNull, count as dslCount, sum as dslSum, avg as dslAvg, like, asc, inArray, gt, SQL, not } from 'drizzle-orm';
 import type {
@@ -131,8 +130,9 @@ export async function deleteMenuItem(itemId: string): Promise<boolean> {
     const orderItemsCount = result[0]?.count || 0;
 
     if (orderItemsCount > 0) {
+        const errorMessage = `Item ${itemId} não pode ser excluído pois está associado a ${orderItemsCount} pedido(s).`;
         console.warn(`actions.ts: Attempt to delete MenuItem ${itemId} which is in ${orderItemsCount} orders. Deletion blocked due to 'restrict' onDelete policy.`);
-        throw new Error(`Item ${itemId} não pode ser excluído pois está associado a ${orderItemsCount} pedido(s).`);
+        throw new Error(errorMessage);
     }
 
     const deleteResult = await db.delete(menuItemsTable).where(eq(menuItemsTable.id, itemId)).returning({ id: menuItemsTable.id });
@@ -457,16 +457,19 @@ export async function addNewOrder(newOrderData: NewOrderClientData): Promise<Ord
 
     let formattedDisplayId = `P_ERR`;
     try {
-        const sequenceName = 'order_display_id_seq'; // Usar o nome da sequência diretamente como string
+        const sequenceName = 'order_display_id_seq'; 
         console.log("actions.ts: addNewOrder - Fetching nextval for displayId. Sequence name:", sequenceName);
-        const { rows: [{ nextval: displayIdVal }] } = await tx.execute(sql`SELECT nextval(${sql.raw(sequenceName)}) as nextval;`);
+        const result = await tx.execute(sql`SELECT nextval(${sql.raw(sequenceName)}) as nextval;`);
+        if (!result.rows || result.rows.length === 0 || result.rows[0].nextval === undefined || result.rows[0].nextval === null) {
+            throw new Error("nextval returned no result or null/undefined value for displayId sequence.");
+        }
+        const displayIdVal = result.rows[0].nextval;
         formattedDisplayId = `P${String(displayIdVal).padStart(4, '0')}`;
         console.log("actions.ts: addNewOrder - Generated displayId:", formattedDisplayId);
     } catch (seqError) {
         console.error("actions.ts: addNewOrder - CRITICAL ERROR fetching nextval for displayId sequence. Error:", seqError);
-        // Considerar se deve lançar o erro aqui ou permitir que o pedido seja salvo com displayId de fallback.
-        // Se displayId for UNIQUE e NOT NULL no banco, esta falha será crítica.
-        // throw new Error("Failed to generate display ID for order: " + (seqError as Error).message);
+        // Re-throw the error to ensure the transaction is aborted and the client is notified.
+        throw new Error("Falha ao gerar o ID de exibição para o pedido: " + (seqError as Error).message);
     }
     
     const orderToInsert = {
@@ -697,8 +700,9 @@ export async function getDashboardAnalytics(
 
 
   const dailyRevenue: DailyRevenue[] = [];
+  const today = new Date();
   for (let i = 6; i >= 0; i--) {
-    const day = subDays(new Date(), i);
+    const day = subDays(today, i); // Usar 'today' como referência para consistência
     const start = startOfDay(day);
     const end = endOfDay(day);
 
@@ -720,8 +724,13 @@ export async function getDashboardAnalytics(
 
   let averageTimeToDeliveryMinutes: number | undefined = undefined;
   let deliveredWhereConditions: SQL | undefined = and(eq(ordersTable.status, 'Entregue'), isNotNull(ordersTable.deliveredAt), isNotNull(ordersTable.createdAt));
-  if (dateFilter) {
-    deliveredWhereConditions = and(eq(ordersTable.status, 'Entregue'), dateFilter, isNotNull(ordersTable.deliveredAt), isNotNull(ordersTable.createdAt));
+  if (dateFilter) { // Aplica filtro de período também aqui se fornecido
+    deliveredWhereConditions = and(
+        eq(ordersTable.status, 'Entregue'), 
+        dateFilter, 
+        isNotNull(ordersTable.deliveredAt), 
+        isNotNull(ordersTable.createdAt)
+    );
   }
 
   const deliveredOrdersForTimeAvg = await db.select({ createdAt: ordersTable.createdAt, deliveredAt: ordersTable.deliveredAt })
@@ -730,7 +739,7 @@ export async function getDashboardAnalytics(
   
   if (deliveredOrdersForTimeAvg.length > 0) {
     const totalDeliveryMinutes = deliveredOrdersForTimeAvg.reduce((sum, o) => {
-      if (!o.createdAt || !o.deliveredAt) return sum; // Skip if dates are missing
+      if (!o.createdAt || !o.deliveredAt) return sum; 
       const createdAtDate = o.createdAt instanceof Date ? o.createdAt : parseISO(o.createdAt as unknown as string);
       const deliveredAtDate = o.deliveredAt instanceof Date ? o.deliveredAt : parseISO(o.deliveredAt as unknown as string);
       return sum + differenceInMinutes(deliveredAtDate, createdAtDate);
@@ -740,7 +749,7 @@ export async function getDashboardAnalytics(
   console.log("actions.ts: Dashboard - averageTimeToDeliveryMinutes:", averageTimeToDeliveryMinutes, "(Delivered orders for avg:", deliveredOrdersForTimeAvg.length, ")");
 
   let couponUsageWhereConditions: SQL | undefined = and(isNotNull(ordersTable.couponId), notCancelledFilter);
-  if(dateFilter) {
+  if(dateFilter) { // Aplica filtro de período também aqui se fornecido
     couponUsageWhereConditions = and(isNotNull(ordersTable.couponId), notCancelledFilter, dateFilter);
   }
 
@@ -798,7 +807,7 @@ export async function exportOrdersToCSV(): Promise<string> {
             csvString += `"${order.customerAddress.replace(/"/g, '""')}";`;
             csvString += `"${order.customerCep || ''}";`;
             csvString += `"${(order.customerReferencePoint || '').replace(/"/g, '""')}";`;
-            csvString += `"${format(parseISO(order.createdAt), 'dd/MM/yyyy HH:mm')}";`;
+            csvString += `"${format(parseISO(order.createdAt), 'dd/MM/yyyy HH:mm', {locale: ptBR})}";`;
             csvString += `"${order.status}";`;
             csvString += `"${order.paymentType || ''}";`;
             csvString += `"${order.paymentStatus}";`;
@@ -836,15 +845,21 @@ export async function fetchAddressFromCep(cep: string): Promise<CepAddress | nul
         console.error(`actions.ts: BrasilAPI retornou erro ${response.status}. Body: ${errorBody}`);
         throw new Error(`BrasilAPI retornou erro ${response.status}`);
     }
-    const data = await response.json() as CepAddress; // Cast para o tipo CepAddress
-    console.log(`actions.ts: CEP ${cleanedCep} encontrado. Dados:`, data);
+    const data = await response.json() as CepAddress; 
+    console.log(`actions.ts: CEP ${cleanedCep} encontrado. Dados:`, JSON.stringify(data, null, 2));
     
-    const fullAddress = `${data.street || ''}${data.street && data.neighborhood ? ', ' : ''}${data.neighborhood || ''}${ (data.street || data.neighborhood) && data.city ? ', ' : ''}${data.city || ''}${data.city && data.state ? ' - ' : ''}${data.state || ''}`.trim();
+    const fullAddress = [data.street, data.neighborhood, data.city, data.state]
+        .filter(Boolean) // Remove partes vazias
+        .join(', ')
+        .replace(/, $/, ''); // Remove vírgula no final se houver
 
     return { ...data, fullAddress: fullAddress || undefined };
 
   } catch (error) {
     console.error("actions.ts: Erro ao buscar CEP na BrasilAPI:", error);
+    if (error instanceof Error && error.message.includes('fetch')) {
+         throw new Error("Erro de rede ao buscar CEP. Verifique sua conexão.");
+    }
     return null; 
   }
 }
@@ -1000,10 +1015,12 @@ export async function updateDeliveryPerson(id: string, data: Partial<Omit<Delive
   console.log("actions.ts: Updating delivery person. ID:", id, "Data:", JSON.stringify(data, null, 2));
   try {
     const updateData = { ...data, updatedAt: new Date() };
-    console.log("actions.ts: Delivery person update payload:", JSON.stringify(updateData, null, 2));
+    // Remover 'id' do objeto de atualização, se presente, pois não deve ser atualizado.
+    const { id: dataId, ...payload } = updateData as any;
+    console.log("actions.ts: Delivery person update payload:", JSON.stringify(payload, null, 2));
 
     const [updatedPerson] = await db.update(deliveryPersonsTable)
-      .set(updateData)
+      .set(payload)
       .where(eq(deliveryPersonsTable.id, id))
       .returning();
 
@@ -1035,8 +1052,9 @@ export async function deleteDeliveryPerson(id: string): Promise<boolean> {
         .limit(1);
 
     if (assignedOrders.length > 0) {
+        const errorMessage = `Entregador está associado a pedidos ativos (ex: ${assignedOrders[0].orderId}) e não pode ser excluído.`;
         console.warn(`actions.ts: Cannot delete delivery person ${id}, assigned to active order(s) like ${assignedOrders[0].orderId}.`);
-        throw new Error(`Entregador está associado a pedidos ativos e não pode ser excluído.`);
+        throw new Error(errorMessage);
     }
 
     const result = await db.delete(deliveryPersonsTable).where(eq(deliveryPersonsTable.id, id)).returning({ id: deliveryPersonsTable.id });
@@ -1049,6 +1067,4 @@ export async function deleteDeliveryPerson(id: string): Promise<boolean> {
     throw new Error("Unknown error deleting delivery person.");
   }
 }
-
-
     

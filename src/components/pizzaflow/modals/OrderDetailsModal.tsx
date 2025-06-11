@@ -20,7 +20,7 @@ import { Badge } from '@/components/ui/badge';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { FileText, Ticket } from 'lucide-react'; // Changed MessageSquare to FileText for NFe
+import { FileText, Ticket } from 'lucide-react';
 
 interface OrderDetailsModalProps {
   order: Order | null;

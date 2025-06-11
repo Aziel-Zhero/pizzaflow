@@ -42,6 +42,7 @@ const OrderCard: FC<OrderCardProps> = ({
   const timeAgo = formatDistanceToNow(parseISO(order.createdAt), { addSuffix: true, locale: ptBR });
   const isUrl = (str: string | undefined): boolean => !!str && (str.startsWith('http://') || str.startsWith('https://'));
   const hasItemNotes = order.items.some(item => item.itemNotes && item.itemNotes.trim() !== '');
+  const hasGeneralNotes = order.notes && order.notes.trim() !== '';
 
   return (
     <Card className={`shadow-lg hover:shadow-xl transition-shadow duration-300 flex flex-col h-full ${isNew ? 'border-2 border-primary animate-pulse-border' : ''}`}>
@@ -83,10 +84,14 @@ const OrderCard: FC<OrderCardProps> = ({
           <DollarSign className="h-4 w-4 mr-2 text-primary shrink-0" />
           <span>R$ {Number(order.totalAmount).toFixed(2).replace('.',',')}</span>
         </div>
-         {(order.notes || hasItemNotes) && (
+         {(hasGeneralNotes || hasItemNotes) && (
             <div className="flex items-start text-xs text-muted-foreground mt-1">
                 <MessageSquare className="h-3.5 w-3.5 mr-1.5 text-orange-500 shrink-0 mt-0.5" />
-                <span>{order.notes ? `Obs Pedido. ` : ''}{hasItemNotes ? `Obs Item(s).` : ''}</span>
+                <span>
+                  {hasGeneralNotes ? `Pedido: "${order.notes?.substring(0,30)}${order.notes && order.notes.length > 30 ? "..." : ""}" ` : ''}
+                  {hasGeneralNotes && hasItemNotes ? <br className="sm:hidden"/> : ''}
+                  {hasItemNotes ? `Item(s) com obs.` : ''}
+                </span>
             </div>
         )}
         {order.appliedCouponCode && (
@@ -95,11 +100,17 @@ const OrderCard: FC<OrderCardProps> = ({
             <span>Cupom: {order.appliedCouponCode} (-R$ {Number(order.appliedCouponDiscount || 0).toFixed(2).replace('.',',')})</span>
           </div>
         )}
+         {order.status === 'SaiuParaEntrega' && order.deliveryPerson && (
+          <div className="flex items-start text-xs text-muted-foreground mt-1">
+            <Truck className="h-3.5 w-3.5 mr-1.5 text-purple-500 shrink-0 mt-0.5" />
+            <span>Entregador: {order.deliveryPerson}</span>
+          </div>
+        )}
         {order.optimizedRoute && isUrl(order.optimizedRoute) && order.status === 'SaiuParaEntrega' && (
           <div className="flex items-start mt-1">
-            <Truck className="h-4 w-4 mr-2 text-purple-500 shrink-0 mt-0.5" />
+            <ExternalLink className="h-4 w-4 mr-2 text-purple-500 shrink-0 mt-0.5" />
             <Link href={order.optimizedRoute} target="_blank" rel="noopener noreferrer" className="text-xs text-purple-600 hover:text-purple-800 hover:underline break-all flex items-center">
-              Ver Rota no Mapa <ExternalLink className="ml-1 h-3 w-3" />
+              Ver Rota no Mapa
             </Link>
           </div>
         )}
@@ -136,3 +147,4 @@ const OrderCard: FC<OrderCardProps> = ({
 };
 
 export default OrderCard;
+

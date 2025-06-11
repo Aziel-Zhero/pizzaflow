@@ -9,8 +9,7 @@
       timestamp,
       integer,
       pgEnum,
-      // A importação de 'sequence' foi removida em uma etapa anterior, pois causava erro de build.
-      // A sequência 'order_display_id_seq' deve ser criada pela migração SQL.
+      // 'sequence' import was removed in previous fixes as it caused build errors
     } from 'drizzle-orm/pg-core';
     import crypto from 'crypto'; // For UUID generation
     
@@ -19,9 +18,6 @@
     export const paymentTypeEnum = pgEnum('payment_type', ["Dinheiro", "Cartao", "Online"]);
     export const paymentStatusEnum = pgEnum('payment_status', ["Pendente", "Pago"]);
     export const discountTypeEnum = pgEnum('discount_type', ["PERCENTAGE", "FIXED_AMOUNT"]);
-    
-    // A definição 'export const orderDisplayIdSequence' foi removida daqui em uma etapa anterior.
-    // A sequência 'order_display_id_seq' é criada pela migração e usada diretamente com sql`nextval()` em actions.ts.
     
     // Tables
     export const menuItems = pgTable('menu_items', {
@@ -39,7 +35,7 @@
     
     export const orders = pgTable('orders', {
       id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
-      displayId: varchar('display_id', {length: 50}), // GARANTIR QUE ESTA LINHA ESTEJA AQUI E CORRETA
+      displayId: varchar('display_id', {length: 50}), // THIS LINE DEFINES THE COLUMN
       customerName: varchar('customer_name', { length: 255 }).notNull(),
       customerAddress: text('customer_address').notNull(),
       customerCep: varchar('customer_cep', { length: 20 }),
@@ -136,7 +132,6 @@
     }));
     
     // Export all schemas for Drizzle to use
-    // A exportação individual de 'orderDisplayIdSequence' foi removida daqui
     export const schema = {
       menuItems,
       orders,

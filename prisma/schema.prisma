@@ -1,0 +1,24 @@
+
+// Este arquivo não é mais usado ativamente, pois migramos para Drizzle ORM.
+// O schema do banco de dados agora é definido em src/lib/schema.ts usando Drizzle.
+// Você pode remover este arquivo e a pasta /prisma se não houver mais nada relacionado ao Prisma.
+
+// generator client {
+//   provider        = "prisma-client-js"
+//   previewFeatures = ["driverAdapters"] 
+// }
+
+// datasource db {
+//   provider  = "postgresql"
+//   url       = env("DATABASE_URL") // Para o Accelerate em runtime
+//   directUrl = env("DIRECT_URL")   // Para migrações
+// }
+
+// Manter este arquivo vazio ou com este comentário para evitar erros se algum script ainda tentar lê-lo.
+// Para remover completamente o Prisma:
+// 1. Remova as dependências do Prisma do package.json (@prisma/client, prisma).
+// 2. Remova os scripts do Prisma do package.json.
+// 3. Exclua a pasta /prisma.
+// 4. Exclua o arquivo .env se contiver apenas variáveis do Prisma.
+// 5. Ajuste qualquer importação de `PrismaClient` ou tipos do Prisma no seu código.
+// (Esses passos já foram iniciados pela IA).

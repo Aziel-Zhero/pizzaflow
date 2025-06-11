@@ -1,37 +1,19 @@
+-- Enums
+DO $$ BEGIN CREATE TYPE "public"."order_status" AS ENUM('Pendente', 'EmPreparo', 'AguardandoRetirada', 'SaiuParaEntrega', 'Entregue', 'Cancelado'); EXCEPTION WHEN duplicate_object THEN null; END $$;
+DO $$ BEGIN CREATE TYPE "public"."payment_type" AS ENUM('Dinheiro', 'Cartao', 'Online'); EXCEPTION WHEN duplicate_object THEN null; END $$;
+DO $$ BEGIN CREATE TYPE "public"."payment_status" AS ENUM('Pendente', 'Pago'); EXCEPTION WHEN duplicate_object THEN null; END $$;
+DO $$ BEGIN CREATE TYPE "public"."discount_type" AS ENUM('PERCENTAGE', 'FIXED_AMOUNT'); EXCEPTION WHEN duplicate_object THEN null; END $$;
 
--- Create Enums
-DO $$ BEGIN
-    CREATE TYPE "public"."order_status" AS ENUM ('Pendente', 'EmPreparo', 'AguardandoRetirada', 'SaiuParaEntrega', 'Entregue', 'Cancelado');
-EXCEPTION
-    WHEN duplicate_object THEN null;
-END $$;
-
-DO $$ BEGIN
-    CREATE TYPE "public"."payment_type" AS ENUM ('Dinheiro', 'Cartao', 'Online');
-EXCEPTION
-    WHEN duplicate_object THEN null;
-END $$;
-
-DO $$ BEGIN
-    CREATE TYPE "public"."payment_status" AS ENUM ('Pendente', 'Pago');
-EXCEPTION
-    WHEN duplicate_object THEN null;
-END $$;
-
-DO $$ BEGIN
-    CREATE TYPE "public"."discount_type" AS ENUM ('PERCENTAGE', 'FIXED_AMOUNT');
-EXCEPTION
-    WHEN duplicate_object THEN null;
-END $$;
-
--- Create Sequence
+-- Sequence for Order Display ID
 CREATE SEQUENCE IF NOT EXISTS "public"."order_display_id_seq"
     INCREMENT BY 1
     MINVALUE 1
+    NO MAXVALUE
     START WITH 1
+    CACHE 1
     NO CYCLE;
 
--- Create Tables
+-- Tables
 CREATE TABLE IF NOT EXISTS "public"."menu_items" (
     "id" text PRIMARY KEY NOT NULL,
     "name" varchar(255) NOT NULL,
@@ -84,7 +66,7 @@ CREATE TABLE IF NOT EXISTS "public"."orders" (
     "delivered_at" timestamp with time zone,
     "estimated_delivery_time" varchar(100),
     "delivery_person" varchar(255),
-    "delivery_person_id" text REFERENCES "public"."delivery_persons"("id") ON DELETE SET NULL,
+    "delivery_person_id" text,
     "payment_type" "public"."payment_type",
     "payment_status" "public"."payment_status" DEFAULT 'Pendente' NOT NULL,
     "notes" text,
@@ -92,15 +74,19 @@ CREATE TABLE IF NOT EXISTS "public"."orders" (
     "nfe_link" text,
     "applied_coupon_code" varchar(100),
     "applied_coupon_discount" numeric(10, 2),
-    "coupon_id" text REFERENCES "public"."coupons"("id") ON DELETE SET NULL
+    "coupon_id" text,
+    CONSTRAINT "orders_delivery_person_id_delivery_persons_id_fk" FOREIGN KEY("delivery_person_id") REFERENCES "public"."delivery_persons"("id") ON DELETE set null ON UPDATE no action,
+    CONSTRAINT "orders_coupon_id_coupons_id_fk" FOREIGN KEY("coupon_id") REFERENCES "public"."coupons"("id") ON DELETE set null ON UPDATE no action
 );
 
 CREATE TABLE IF NOT EXISTS "public"."order_items" (
     "id" text PRIMARY KEY NOT NULL,
-    "order_id" text NOT NULL REFERENCES "public"."orders"("id") ON DELETE cascade,
-    "menu_item_id" text NOT NULL REFERENCES "public"."menu_items"("id") ON DELETE restrict,
+    "order_id" text NOT NULL,
+    "menu_item_id" text NOT NULL,
     "name" varchar(255) NOT NULL,
     "quantity" integer NOT NULL,
     "price" numeric(10, 2) NOT NULL,
-    "item_notes" text
+    "item_notes" text,
+    CONSTRAINT "order_items_order_id_orders_id_fk" FOREIGN KEY("order_id") REFERENCES "public"."orders"("id") ON DELETE cascade ON UPDATE no action,
+    CONSTRAINT "order_items_menu_item_id_menu_items_id_fk" FOREIGN KEY("menu_item_id") REFERENCES "public"."menu_items"("id") ON DELETE restrict ON UPDATE no action
 );

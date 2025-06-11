@@ -1,45 +1,48 @@
-
 "use server";
 import { prisma } from '@/lib/db';
-import type { 
-  Order as PrismaOrder, 
-  MenuItem as PrismaMenuItem, 
-  OrderItem as PrismaOrderItem,
-  Coupon as PrismaCoupon,
-  OrderStatus as PrismaOrderStatus, 
-  PaymentType as PrismaPaymentType,
-  PaymentStatus as PrismaPaymentStatus,
-  DiscountType as PrismaDiscountType
+
+// Import Prisma enums as values, and model types as types
+import {
+  OrderStatus as PrismaOrderStatusEnum, // Renamed to avoid conflict with local OrderStatus type
+  PaymentType as PrismaPaymentTypeEnum,
+  PaymentStatus as PrismaPaymentStatusEnum,
+  DiscountType as PrismaDiscountTypeEnum
 } from '@prisma/client';
 
-import type { 
-    Order, 
-    MenuItem, 
-    OrderItem, 
+import type {
+  Order as PrismaOrder, // Prisma Model Type
+  MenuItem as PrismaMenuItem,
+  OrderItem as PrismaOrderItem,
+  Coupon as PrismaCoupon
+} from '@prisma/client';
+
+
+import type {
+    Order, // Local Order type
+    MenuItem, // Local MenuItem type
+    OrderItem, // Local OrderItem type
     NewOrderClientData,
-    NewOrderClientItemData, 
-    OrderStatus, 
-    PaymentType,
-    PaymentStatus,
-    DashboardAnalyticsData, 
-    DailyRevenue, 
-    OrdersByStatusData, 
-    CepAddress, 
-    OptimizeMultiDeliveryRouteInput, 
+    NewOrderClientItemData,
+    OrderStatus, // Local OrderStatus string union type
+    PaymentType, // Local PaymentType string union type
+    PaymentStatus, // Local PaymentStatus string union type
+    DashboardAnalyticsData,
+    DailyRevenue,
+    OrdersByStatusData,
+    CepAddress,
+    OptimizeMultiDeliveryRouteInput,
     OptimizeMultiDeliveryRouteOutput,
     OptimizeDeliveryRouteInput,
     OptimizeDeliveryRouteOutput,
     TimeEstimateData,
     CouponUsageData,
-    Coupon
+    Coupon // Local Coupon type
 } from '@/lib/types';
 import { optimizeDeliveryRoute as aiOptimizeDeliveryRoute, optimizeMultiDeliveryRoute as aiOptimizeMultiDeliveryRoute } from '@/ai/flows/optimize-delivery-route';
 import { format, subDays, parseISO, differenceInMinutes, startOfDay, endOfDay } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Decimal } from '@prisma/client/runtime/library'; // Importação correta
+import { Decimal } from '@prisma/client/runtime/library';
 
-// Helper para converter Decimal para number e datas para string ISO
-// E BigInt para string para serialização segura.
 const toJSONSafe = <T>(data: T): T => {
   if (data === null || data === undefined) {
     return data;
@@ -71,7 +74,7 @@ export async function addMenuItem(item: Omit<MenuItem, 'id' | 'createdAt' | 'upd
   const newItem = await prisma.menuItem.create({
     data: {
       name: item.name,
-      price: new Decimal(item.price), 
+      price: new Decimal(item.price),
       category: item.category,
       description: item.description || null,
       imageUrl: item.imageUrl || null,
@@ -105,15 +108,10 @@ export async function updateMenuItem(updatedItem: MenuItem): Promise<MenuItem | 
 
 export async function deleteMenuItem(itemId: string): Promise<boolean> {
   try {
-    // Verificar se o item está em algum OrderItem. Se estiver, não permitir a exclusão
-    // ou tratar os OrderItems (ex: marcar como item excluído).
-    // Por simplicidade, vamos verificar.
     const orderItemsCount = await prisma.orderItem.count({ where: { menuItemId: itemId } });
     if (orderItemsCount > 0) {
-        console.warn(`Tentativa de excluir MenuItem ${itemId} que está em ${orderItemsCount} pedidos. Exclusão bloqueada.`);
-        // Idealmente, lançar um erro ou retornar um objeto com status e mensagem.
-        // throw new Error("Não é possível excluir um item do cardápio que já foi pedido. Considere desativá-lo.");
-        return false; 
+        console.warn(`Attempt to delete MenuItem ${itemId} which is in ${orderItemsCount} orders. Deletion blocked.`);
+        return false;
     }
     await prisma.menuItem.delete({
       where: { id: itemId },
@@ -128,10 +126,10 @@ export async function deleteMenuItem(itemId: string): Promise<boolean> {
 // --- Funções de Pedidos ---
 export async function getOrders(): Promise<Order[]> {
   const orders = await prisma.order.findMany({
-    where: { status: { not: PrismaOrderStatus.Cancelado } }, // Exclui cancelados por padrão na listagem principal
-    include: { 
-        items: true, // OrderItem já tem name, price, etc. Não precisa do menuItem aqui.
-        coupon: true 
+    where: { status: { not: PrismaOrderStatusEnum.Cancelado } },
+    include: {
+        items: true,
+        coupon: true
     },
     orderBy: { createdAt: 'desc' },
   });
@@ -141,9 +139,9 @@ export async function getOrders(): Promise<Order[]> {
 export async function getOrderById(orderId: string): Promise<Order | null> {
   const order = await prisma.order.findUnique({
     where: { id: orderId },
-    include: { 
+    include: {
         items: true,
-        coupon: true 
+        coupon: true
     },
   });
   return order ? toJSONSafe(order) : null;
@@ -151,11 +149,11 @@ export async function getOrderById(orderId: string): Promise<Order | null> {
 
 export async function updateOrderStatus(orderId: string, status: OrderStatus): Promise<Order | null> {
   try {
-    const dataToUpdate: Partial<PrismaOrder> & { updatedAt: Date } = { 
-        status: status as PrismaOrderStatus, 
-        updatedAt: new Date() 
+    const dataToUpdate: Partial<PrismaOrder> & { updatedAt: Date } = {
+        status: status as PrismaOrderStatusEnum,
+        updatedAt: new Date()
     };
-    if (status === PrismaOrderStatus.Entregue) {
+    if (status === PrismaOrderStatusEnum.Entregue) {
       dataToUpdate.deliveredAt = new Date();
     }
     const updatedOrder = await prisma.order.update({
@@ -175,7 +173,7 @@ export async function assignDelivery(orderId: string, route: string, deliveryPer
     const updatedOrder = await prisma.order.update({
       where: { id: orderId },
       data: {
-        status: PrismaOrderStatus.SaiuParaEntrega,
+        status: PrismaOrderStatusEnum.SaiuParaEntrega,
         optimizedRoute: route,
         deliveryPerson: deliveryPerson,
         updatedAt: new Date(),
@@ -197,7 +195,7 @@ export async function assignMultiDelivery(routePlan: OptimizeMultiDeliveryRouteO
         const updatedOrder = await prisma.order.update({
           where: { id: orderId },
           data: {
-            status: PrismaOrderStatus.SaiuParaEntrega,
+            status: PrismaOrderStatusEnum.SaiuParaEntrega,
             optimizedRoute: leg.googleMapsUrl,
             deliveryPerson: deliveryPerson,
             updatedAt: new Date(),
@@ -205,7 +203,8 @@ export async function assignMultiDelivery(routePlan: OptimizeMultiDeliveryRouteO
           include: { items: true, coupon: true },
         });
         updatedOrdersPrisma.push(updatedOrder);
-      } catch (error) {
+      } catch (error)
+{
         console.error(`Error assigning multi-delivery for order ${orderId}:`, error);
       }
     }
@@ -216,24 +215,22 @@ export async function assignMultiDelivery(routePlan: OptimizeMultiDeliveryRouteO
 export async function updateOrderDetails(updatedOrderData: Order): Promise<Order | null> {
   try {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { items, coupon, createdAt, updatedAt, ...orderData } = updatedOrderData; 
-    
-    const dataForUpdate: any = { 
+    const { items, coupon, createdAt, updatedAt, ...orderData } = updatedOrderData;
+
+    const dataForUpdate: any = {
         ...orderData,
         totalAmount: new Decimal(orderData.totalAmount),
-        paymentType: orderData.paymentType ? orderData.paymentType as PrismaPaymentType : null,
-        paymentStatus: orderData.paymentStatus as PrismaPaymentStatus,
+        paymentType: orderData.paymentType ? orderData.paymentType as PrismaPaymentTypeEnum : null,
+        paymentStatus: orderData.paymentStatus as PrismaPaymentStatusEnum,
+        status: orderData.status as PrismaOrderStatusEnum,
         updatedAt: new Date(),
         nfeLink: orderData.nfeLink || null,
     };
     if (orderData.appliedCouponDiscount !== undefined && orderData.appliedCouponDiscount !== null) {
         dataForUpdate.appliedCouponDiscount = new Decimal(orderData.appliedCouponDiscount);
     } else {
-        // Explicitamente define como null se for undefined ou null vindo do cliente.
-        // O Prisma pode interpretar 'undefined' de formas diferentes de 'null'.
-        dataForUpdate.appliedCouponDiscount = null; 
+        dataForUpdate.appliedCouponDiscount = null;
     }
-    // Remove couponId se não houver cupom aplicado para evitar erro de constraint
     if (!orderData.couponId) {
         dataForUpdate.couponId = null;
     }
@@ -259,7 +256,7 @@ export async function addNewOrder(newOrderData: NewOrderClientData): Promise<Ord
   }
 
   let finalTotalAmount = new Decimal(subTotal);
-  let appliedCoupon: PrismaCoupon | null = null;
+  let appliedCouponDb: PrismaCoupon | null = null;
   let couponDiscountAmount = new Decimal(0);
 
   if (newOrderData.couponCode) {
@@ -270,27 +267,26 @@ export async function addNewOrder(newOrderData: NewOrderClientData): Promise<Ord
     if (potentialCoupon) {
       let isValid = true;
       if (potentialCoupon.expiresAt && new Date(potentialCoupon.expiresAt) < new Date()) {
-        isValid = false; 
+        isValid = false;
       }
       if (isValid && potentialCoupon.usageLimit !== null && potentialCoupon.timesUsed >= potentialCoupon.usageLimit) {
-        isValid = false; 
+        isValid = false;
       }
       if (isValid && potentialCoupon.minOrderAmount && new Decimal(subTotal).lt(potentialCoupon.minOrderAmount)) {
         isValid = false;
       }
       if (isValid) {
-        appliedCoupon = potentialCoupon;
+        appliedCouponDb = potentialCoupon;
       }
     }
   }
 
-  if (appliedCoupon) {
-    if (appliedCoupon.discountType === PrismaDiscountType.PERCENTAGE) {
-      couponDiscountAmount = finalTotalAmount.mul(appliedCoupon.discountValue.div(100));
-    } else if (appliedCoupon.discountType === PrismaDiscountType.FIXED_AMOUNT) {
-      couponDiscountAmount = appliedCoupon.discountValue;
+  if (appliedCouponDb) {
+    if (appliedCouponDb.discountType === PrismaDiscountTypeEnum.PERCENTAGE) {
+      couponDiscountAmount = finalTotalAmount.mul(appliedCouponDb.discountValue.div(100));
+    } else if (appliedCouponDb.discountType === PrismaDiscountTypeEnum.FIXED_AMOUNT) {
+      couponDiscountAmount = appliedCouponDb.discountValue;
     }
-    // Ensure discount doesn't exceed subtotal
     if (couponDiscountAmount.gt(finalTotalAmount)) {
         couponDiscountAmount = finalTotalAmount;
     }
@@ -303,30 +299,30 @@ export async function addNewOrder(newOrderData: NewOrderClientData): Promise<Ord
       customerAddress: newOrderData.customerAddress,
       customerCep: newOrderData.customerCep,
       customerReferencePoint: newOrderData.customerReferencePoint,
-      totalAmount: finalTotalAmount, // Já é Decimal
-      paymentType: newOrderData.paymentType ? newOrderData.paymentType as PrismaPaymentType : null,
+      totalAmount: finalTotalAmount,
+      paymentType: newOrderData.paymentType ? newOrderData.paymentType as PrismaPaymentTypeEnum : null,
       notes: newOrderData.notes,
-      status: PrismaOrderStatus.Pendente,
-      paymentStatus: newOrderData.paymentType === 'Online' ? PrismaPaymentStatus.Pago : PrismaPaymentStatus.Pendente,
+      status: PrismaOrderStatusEnum.Pendente,
+      paymentStatus: newOrderData.paymentType === 'Online' ? PrismaPaymentStatusEnum.Pago : PrismaPaymentStatusEnum.Pendente,
       items: {
         create: newOrderData.items.map((item: NewOrderClientItemData) => ({
           menuItemId: item.menuItemId,
-          name: item.name, 
+          name: item.name,
           quantity: item.quantity,
-          price: new Decimal(item.price), 
+          price: new Decimal(item.price),
           itemNotes: item.itemNotes,
         })),
       },
-      appliedCouponCode: appliedCoupon?.code,
-      appliedCouponDiscount: appliedCoupon ? couponDiscountAmount : null, // Já é Decimal ou null
-      couponId: appliedCoupon?.id,
+      appliedCouponCode: appliedCouponDb?.code,
+      appliedCouponDiscount: appliedCouponDb ? couponDiscountAmount : null,
+      couponId: appliedCouponDb?.id,
     },
     include: { items: true, coupon: true },
   });
 
-  if (appliedCoupon) {
+  if (appliedCouponDb) {
     await prisma.coupon.update({
-      where: { id: appliedCoupon.id },
+      where: { id: appliedCouponDb.id },
       data: { timesUsed: { increment: 1 } },
     });
   }
@@ -340,45 +336,51 @@ export async function simulateNewOrder(): Promise<Order> {
     const menuItems = await getAvailableMenuItems();
     if (menuItems.length === 0) {
         console.error("Cardápio está vazio, não é possível simular pedido.");
-        throw new Error("Cardápio está vazio, não é possível simular pedido.");
+        await addMenuItem({ name: "Pizza de Teste", price: 25.99, category: "Pizzas Salgadas" });
+        console.log("Adicionada pizza de teste ao cardápio.");
+        const updatedMenuItems = await getAvailableMenuItems();
+        if (updatedMenuItems.length === 0) {
+             throw new Error("Falha ao adicionar item de teste ao cardápio. Cardápio continua vazio.");
+        }
+        return simulateNewOrder();
     }
     console.log(`Itens do cardápio disponíveis: ${menuItems.length}`);
 
     const customerNames = ["Laura Mendes", "Pedro Alves", "Sofia Lima", "Bruno Gomes", "Gabriela Rocha", "Rafael Souza"];
-    
+
     const numItemsToOrder = Math.floor(Math.random() * 2) + 1;
     const orderItemsClient: NewOrderClientItemData[] = [];
     const shuffledMenuItems = [...menuItems].sort(() => 0.5 - Math.random());
-    
+
     for (let i = 0; i < numItemsToOrder; i++) {
         const menuItem = shuffledMenuItems[i % shuffledMenuItems.length];
-        const item: NewOrderClientItemData = { 
+        const item: NewOrderClientItemData = {
             menuItemId: menuItem.id,
             name: menuItem.name,
-            quantity: 1, 
-            price: menuItem.price, 
+            quantity: 1,
+            price: menuItem.price,
         };
         if (Math.random() < 0.2) {
             item.itemNotes = "Observação simulada para item.";
         }
         orderItemsClient.push(item);
     }
-    
+
      if (orderItemsClient.length === 0 && shuffledMenuItems.length > 0) {
         const fallbackItem = shuffledMenuItems[0];
-         orderItemsClient.push({ 
-             menuItemId: fallbackItem.id, 
-             name: fallbackItem.name, 
-             quantity: 1, 
-             price: fallbackItem.price 
+         orderItemsClient.push({
+             menuItemId: fallbackItem.id,
+             name: fallbackItem.name,
+             quantity: 1,
+             price: fallbackItem.price
         });
     }
     console.log(`Itens do pedido simulado: ${orderItemsClient.length}`);
 
     const randomCustomer = customerNames[Math.floor(Math.random() * customerNames.length)];
-    const paymentTypesClient: PaymentType[] = ["Dinheiro", "Cartao", "Online"]; 
-    const randomPaymentType = paymentTypesClient[Math.floor(Math.random() * paymentTypesClient.length)];
-    
+    const paymentTypesClientLocal: PaymentType[] = ["Dinheiro", "Cartao", "Online"];
+    const randomPaymentType = paymentTypesClientLocal[Math.floor(Math.random() * paymentTypesClientLocal.length)];
+
     const newOrderPayload: NewOrderClientData = {
         customerName: randomCustomer,
         customerAddress: `${Math.floor(Math.random()*900)+100} Rua Simulada, Bairro Teste, Cidade Exemplo, UF`,
@@ -393,7 +395,7 @@ export async function simulateNewOrder(): Promise<Order> {
     try {
         const createdOrder = await addNewOrder(newOrderPayload);
         console.log("Pedido simulado criado com sucesso no banco:", createdOrder.id);
-        return createdOrder; // addNewOrder já usa toJSONSafe
+        return createdOrder;
     } catch (error) {
         console.error("Erro ao criar pedido simulado no banco:", error);
         throw error;
@@ -412,6 +414,7 @@ export async function optimizeMultiRouteAction(input: OptimizeMultiDeliveryRoute
 
 
 // --- Funções de Dashboard ---
+// Use local OrderStatus type for keys here, as they are string literals from UI/client types
 const statusColorsForCharts: Record<OrderStatus, string> = {
   Pendente: "hsl(var(--chart-1))",
   EmPreparo: "hsl(var(--chart-2))",
@@ -424,69 +427,72 @@ const statusColorsForCharts: Record<OrderStatus, string> = {
 
 export async function getDashboardAnalytics(): Promise<DashboardAnalyticsData> {
   const allOrders = await prisma.order.findMany({
-    include: { coupon: true } 
+    include: { coupon: true }
   });
 
-  const nonCancelledOrders = allOrders.filter(o => o.status !== PrismaOrderStatus.Cancelado);
+  const nonCancelledOrders = allOrders.filter(o => o.status !== PrismaOrderStatusEnum.Cancelado);
   const totalOrders = nonCancelledOrders.length;
-  
+
   const totalRevenue = nonCancelledOrders
-    .filter(o => o.paymentStatus === PrismaPaymentStatus.Pago)
+    .filter(o => o.paymentStatus === PrismaPaymentStatusEnum.Pago)
     .reduce((sum, order) => sum + Number(order.totalAmount), 0);
-  
+
   const averageOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
 
-  const statusCounts: Record<PrismaOrderStatus, number> = {
+  // Use local OrderStatus type for keys in statusCounts
+  const statusCounts: Record<OrderStatus, number> = {
     Pendente: 0,
     EmPreparo: 0,
     AguardandoRetirada: 0,
     SaiuParaEntrega: 0,
     Entregue: 0,
-    Cancelado: 0, 
+    Cancelado: 0,
   };
 
   allOrders.forEach(order => {
-    if (statusCounts[order.status] !== undefined) {
-      statusCounts[order.status]++;
+    // order.status is Prisma's enum string value. Cast to local OrderStatus for key access.
+    if (statusCounts[order.status as OrderStatus] !== undefined) {
+      statusCounts[order.status as OrderStatus]++;
     }
   });
 
-  const ordersByStatus: OrdersByStatusData[] = (Object.keys(statusCounts) as PrismaOrderStatus[])
-    .filter(status => status !== PrismaOrderStatus.Cancelado && statusCounts[status] > 0) 
+  const ordersByStatus: OrdersByStatusData[] = (Object.keys(statusCounts) as OrderStatus[])
+    // Compare with Prisma's enum value string for "Cancelado"
+    .filter(status => status !== PrismaOrderStatusEnum.Cancelado && statusCounts[status] > 0)
     .map(status => ({
-      name: status as OrderStatus, 
+      name: status,
       value: statusCounts[status],
-      fill: statusColorsForCharts[status as OrderStatus] || "hsl(var(--muted))",
+      fill: statusColorsForCharts[status] || "hsl(var(--muted))",
     }));
 
   const dailyRevenueMap = new Map<string, number>();
-  const today = startOfDay(new Date()); 
+  const today = startOfDay(new Date());
   for (let i = 6; i >= 0; i--) {
     const day = subDays(today, i);
     const formattedDay = format(day, 'dd/MM', { locale: ptBR });
-    dailyRevenueMap.set(formattedDay, 0); 
+    dailyRevenueMap.set(formattedDay, 0);
   }
-  
+
   nonCancelledOrders.forEach(order => {
-    if (order.paymentStatus === PrismaPaymentStatus.Pago) {
-      const orderDate = startOfDay(order.createdAt); 
+    if (order.paymentStatus === PrismaPaymentStatusEnum.Pago) {
+      const orderDate = startOfDay(order.createdAt);
       if (orderDate >= subDays(today, 6) && orderDate <= today) {
          const formattedDay = format(orderDate, 'dd/MM', { locale: ptBR });
          dailyRevenueMap.set(formattedDay, (dailyRevenueMap.get(formattedDay) || 0) + Number(order.totalAmount));
       }
     }
   });
-  
+
   const dailyRevenue: DailyRevenue[] = Array.from(dailyRevenueMap.entries()).map(([date, revenue]) => ({
     date,
-    name: date, 
+    name: date,
     Receita: revenue,
   }));
 
-  const deliveredOrders = allOrders.filter(o => o.status === PrismaOrderStatus.Entregue && o.deliveredAt);
+  const deliveredOrders = allOrders.filter(o => o.status === PrismaOrderStatusEnum.Entregue && o.deliveredAt);
   let totalDeliveryTimeMinutes = 0;
   deliveredOrders.forEach(order => {
-    if (order.deliveredAt) { 
+    if (order.deliveredAt) {
         totalDeliveryTimeMinutes += differenceInMinutes(order.deliveredAt, order.createdAt);
     }
   });
@@ -505,7 +511,7 @@ export async function getDashboardAnalytics(): Promise<DashboardAnalyticsData> {
     totalDiscountAmount,
   };
 
-  return toJSONSafe({ 
+  return toJSONSafe({
     totalOrders,
     totalRevenue,
     averageOrderValue,
@@ -519,7 +525,7 @@ export async function getDashboardAnalytics(): Promise<DashboardAnalyticsData> {
 
 // --- Funções de Exportação e CEP ---
 export async function exportOrdersToCSV(): Promise<string> {
-  const ordersToExport = await getOrders(); 
+  const ordersToExport = await getOrders();
   if (ordersToExport.length === 0) {
     return "Nenhum pedido para exportar.";
   }
@@ -534,12 +540,12 @@ export async function exportOrdersToCSV(): Promise<string> {
   const rows = ordersToExport.map(order => {
     const itemsString = order.items
       .map(item => `${item.name.replace(/\|/g, '/')}|${item.quantity}|${Number(item.price).toFixed(2).replace('.', ',')}|${(item.itemNotes || '').replace(/\|/g, '/')}`)
-      .join(' // '); 
-    
+      .join(' // ');
+
     return [
       order.id,
       order.customerName,
-      (order.customerAddress || '').replace(/,/g, ';'), 
+      (order.customerAddress || '').replace(/,/g, ';'),
       order.customerCep || '',
       (order.customerReferencePoint || '').replace(/[\r\n,]+/g, ' '),
       itemsString,
@@ -551,9 +557,9 @@ export async function exportOrdersToCSV(): Promise<string> {
       order.deliveryPerson || '',
       order.paymentType || '',
       order.paymentStatus,
-      (order.notes || '').replace(/[\r\n,]+/g, ' '), 
+      (order.notes || '').replace(/[\r\n,]+/g, ' '),
       (order.optimizedRoute || ''),
-      (order.nfeLink || ''), 
+      (order.nfeLink || ''),
       order.appliedCouponCode || '',
       order.appliedCouponDiscount ? Number(order.appliedCouponDiscount).toFixed(2).replace('.', ',') : '0,00'
     ].map(field => `"${String(field === null || field === undefined ? '' : field).replace(/"/g, '""')}"`).join(',');
@@ -563,8 +569,8 @@ export async function exportOrdersToCSV(): Promise<string> {
 }
 
 export async function fetchAddressFromCep(cep: string): Promise<CepAddress | null> {
-  await new Promise(resolve => setTimeout(resolve, 600)); 
-  
+  await new Promise(resolve => setTimeout(resolve, 600));
+
   const cleanedCep = cep.replace(/\D/g, '');
   if (cleanedCep.length !== 8) {
     console.error("CEP inválido:", cep);
@@ -588,7 +594,7 @@ export async function fetchAddressFromCep(cep: string): Promise<CepAddress | nul
       state: "CF",
       fullAddress: "Rua das Maravilhas (Mock), Bairro Sonho (Mock), Cidade Fantasia (Mock) - CF"
     };
-  } else if (cleanedCep === "01001000") { 
+  } else if (cleanedCep === "01001000") {
      return {
       street: "Praça da Sé",
       neighborhood: "Sé",
@@ -597,16 +603,16 @@ export async function fetchAddressFromCep(cep: string): Promise<CepAddress | nul
       fullAddress: "Praça da Sé, Sé, São Paulo - SP"
     };
   }
-  
+
   console.warn(`CEP ${cleanedCep} não encontrado na simulação. Adicione-o ou use uma API real.`);
-  return null; 
+  return null;
 }
 
 // --- Funções de Cupom ---
 export async function getActiveCouponByCode(code: string): Promise<Coupon | null> {
     const coupon = await prisma.coupon.findUnique({
-        where: { 
-            code, 
+        where: {
+            code,
             isActive: true,
             OR: [
                 { expiresAt: null },
@@ -617,7 +623,7 @@ export async function getActiveCouponByCode(code: string): Promise<Coupon | null
 
     if (coupon) {
         if (coupon.usageLimit !== null && coupon.timesUsed >= coupon.usageLimit) {
-            return null; 
+            return null;
         }
     }
     return coupon ? toJSONSafe(coupon) : null;
@@ -627,6 +633,7 @@ export async function createCoupon(data: Omit<PrismaCoupon, 'id' | 'createdAt' |
     const coupon = await prisma.coupon.create({
         data: {
             ...data,
+            discountType: data.discountType as PrismaDiscountTypeEnum, // Ensure Prisma enum type
             discountValue: new Decimal(data.discountValue),
             minOrderAmount: data.minOrderAmount ? new Decimal(data.minOrderAmount) : null,
         }
@@ -641,12 +648,12 @@ export async function createCoupon(data: Omit<PrismaCoupon, 'id' | 'createdAt' |
 //             await createCoupon({
 //                 code: 'PROMO10',
 //                 description: '10% de desconto na sua primeira compra!',
-//                 discountType: PrismaDiscountType.PERCENTAGE,
-//                 discountValue: new Decimal(10), // Prisma espera Decimal
+//                 discountType: PrismaDiscountTypeEnum.PERCENTAGE,
+//                 discountValue: new Decimal(10),
 //                 isActive: true,
-//                 expiresAt: null, 
-//                 usageLimit: null, 
-//                 minOrderAmount: new Decimal(20.00) // Prisma espera Decimal
+//                 expiresAt: null,
+//                 usageLimit: null,
+//                 minOrderAmount: new Decimal(20.00)
 //             });
 //             console.log("Cupom PROMO10 criado com sucesso.");
 //         } catch (error) {
@@ -656,4 +663,22 @@ export async function createCoupon(data: Omit<PrismaCoupon, 'id' | 'createdAt' |
 //         console.log("Cupom PROMO10 já existe.");
 //     }
 // }
-// seedInitialCoupon(); // Descomente para rodar uma vez na inicialização do dev server
+// seedInitialCoupon();
+
+// async function seedInitialMenuItems() {
+//   const count = await prisma.menuItem.count();
+//   if (count === 0) {
+//     await prisma.menuItem.createMany({
+//       data: [
+//         { name: "Pizza Margherita", price: new Decimal(29.90), category: "Pizzas Salgadas", description: "Molho de tomate, mozzarella e manjericão fresco." },
+//         { name: "Pizza Calabresa", price: new Decimal(32.50), category: "Pizzas Salgadas", description: "Molho de tomate, mozzarella, calabresa e cebola." },
+//         { name: "Pizza Chocolate", price: new Decimal(25.00), category: "Pizzas Doces", description: "Chocolate ao leite com morangos." },
+//         { name: "Refrigerante Lata", price: new Decimal(5.00), category: "Bebidas", description: "Coca-Cola, Guaraná, Fanta." },
+//       ]
+//     });
+//     console.log("Itens iniciais do cardápio criados.");
+//   } else {
+//     console.log("Cardápio já possui itens.");
+//   }
+// }
+// seedInitialMenuItems();

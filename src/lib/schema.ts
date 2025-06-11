@@ -9,7 +9,8 @@
       timestamp,
       integer,
       pgEnum,
-      // REMOVIDO: sequence, 
+      // A importação de 'sequence' foi removida em uma etapa anterior, pois causava erro de build.
+      // A sequência 'order_display_id_seq' deve ser criada pela migração SQL.
     } from 'drizzle-orm/pg-core';
     import crypto from 'crypto'; // For UUID generation
     
@@ -19,9 +20,8 @@
     export const paymentStatusEnum = pgEnum('payment_status', ["Pendente", "Pago"]);
     export const discountTypeEnum = pgEnum('discount_type', ["PERCENTAGE", "FIXED_AMOUNT"]);
     
-    // REMOVIDO: A linha export const orderDisplayIdSequence = sequence(...);
-    // A sequência order_display_id_seq será criada pela migração Drizzle.
-    // A lógica para obter o nextval em actions.ts já usa sql`SELECT nextval('order_display_id_seq')`.
+    // A definição 'export const orderDisplayIdSequence' foi removida daqui em uma etapa anterior.
+    // A sequência 'order_display_id_seq' é criada pela migração e usada diretamente com sql`nextval()` em actions.ts.
     
     // Tables
     export const menuItems = pgTable('menu_items', {
@@ -39,7 +39,7 @@
     
     export const orders = pgTable('orders', {
       id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
-      displayId: varchar('display_id', {length: 50}), 
+      displayId: varchar('display_id', {length: 50}), // GARANTIR QUE ESTA LINHA ESTEJA AQUI E CORRETA
       customerName: varchar('customer_name', { length: 255 }).notNull(),
       customerAddress: text('customer_address').notNull(),
       customerCep: varchar('customer_cep', { length: 20 }),
@@ -135,15 +135,14 @@
       orders: many(orders), 
     }));
     
-    
     // Export all schemas for Drizzle to use
+    // A exportação individual de 'orderDisplayIdSequence' foi removida daqui
     export const schema = {
       menuItems,
       orders,
       orderItems,
       coupons,
       deliveryPersons, 
-      // REMOVIDO: orderDisplayIdSequence, 
       // Enums
       orderStatusEnum,
       paymentTypeEnum,

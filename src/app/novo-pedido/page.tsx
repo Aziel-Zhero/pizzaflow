@@ -25,8 +25,17 @@ interface CartItem extends OrderItem {
   imageUrl?: string;
   dataAiHint?: string;
   isPromotion?: boolean;
-  menuItemId: string; // Adicionado para garantir que temos o ID do item do cardápio original
+  menuItemId: string; 
 }
+
+// Função para formatar CEP (ex: 12345-678)
+const formatCep = (value: string): string => {
+  if (!value) return value;
+  const cep = value.replace(/\D/g, ''); // Remove todos os não dígitos
+  if (cep.length <= 5) return cep;
+  return `${cep.slice(0, 5)}-${cep.slice(5, 8)}`;
+};
+
 
 export default function NewOrderPage() {
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
@@ -69,26 +78,33 @@ export default function NewOrderPage() {
     fetchMenu();
   }, [toast]);
 
+  const handleCepChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const formatted = formatCep(e.target.value);
+    setCustomerCep(formatted);
+  };
+
   const handleCepSearch = async () => {
-    if (!customerCep.trim()) {
-      toast({ title: "CEP Inválido", description: "Por favor, insira um CEP.", variant: "destructive" });
+    if (!customerCep.trim() || customerCep.replace(/\D/g, '').length !== 8) {
+      toast({ title: "CEP Inválido", description: "Por favor, insira um CEP válido com 8 dígitos.", variant: "destructive" });
       return;
     }
     setIsFetchingCep(true);
     try {
-      const addressResult = await fetchAddressFromCep(customerCep);
+      const addressResult = await fetchAddressFromCep(customerCep.replace(/\D/g, '')); // Envia CEP limpo
       if (addressResult && addressResult.fullAddress) {
         setCustomerAddress(addressResult.fullAddress);
         toast({ title: "Endereço Encontrado!", description: "Endereço preenchido com base no CEP.", variant: "default" });
-      } else if (addressResult) {
+      } else if (addressResult) { // Se fullAddress não estiver presente, mas outros campos sim
          setCustomerAddress(`${addressResult.street || ''}, ${addressResult.neighborhood || ''}, ${addressResult.city || ''} - ${addressResult.state || ''}`);
-         toast({ title: "Endereço Parcial", description: "Complete o número e complemento.", variant: "default" });
+         toast({ title: "Endereço Parcial", description: "Complete o número e complemento, se necessário.", variant: "default" });
       }
-      else {
+      else { // Nenhum resultado ou resultado inválido
         toast({ title: "CEP não encontrado", description: "Não foi possível encontrar o endereço para este CEP. Por favor, digite manualmente.", variant: "destructive" });
+        setCustomerAddress(''); // Limpa o campo de endereço se o CEP não for encontrado
       }
     } catch (error) {
       toast({ title: "Erro ao Buscar CEP", description: "Ocorreu um problema ao buscar o CEP.", variant: "destructive" });
+      setCustomerAddress('');
     } finally {
       setIsFetchingCep(false);
     }
@@ -103,10 +119,10 @@ export default function NewOrderPage() {
         return newCart;
       }
       return [...prevCart, { 
-        id: `cart_${item.id}_${Date.now()}`, // Temporary client-side ID for cart item
-        menuItemId: item.id, // Store original menu item ID
+        id: `cart_${item.id}_${Date.now()}`, 
+        menuItemId: item.id, 
         name: item.name, 
-        price: item.price, 
+        price: Number(item.price), 
         quantity: 1, 
         imageUrl: item.imageUrl, 
         dataAiHint: item.dataAiHint,
@@ -114,7 +130,7 @@ export default function NewOrderPage() {
         itemNotes: '' 
       }];
     });
-    setAppliedCoupon(null); // Reset coupon if cart changes
+    setAppliedCoupon(null); 
     setCouponMessage(null);
   };
 
@@ -123,7 +139,7 @@ export default function NewOrderPage() {
       const updatedCart = prevCart.map(item =>
         item.id === cartItemId ? { ...item, quantity: Math.max(1, item.quantity + change) } : item
       );
-      return updatedCart.filter(item => item.quantity > 0);
+      return updatedCart.filter(item => item.quantity > 0); 
     });
     setAppliedCoupon(null); 
     setCouponMessage(null);
@@ -156,11 +172,11 @@ export default function NewOrderPage() {
   let discountAmount = 0;
   if (appliedCoupon) {
     if (appliedCoupon.discountType === "PERCENTAGE") {
-      discountAmount = subtotalCartAmount * (appliedCoupon.discountValue / 100);
+      discountAmount = subtotalCartAmount * (Number(appliedCoupon.discountValue) / 100);
     } else if (appliedCoupon.discountType === "FIXED_AMOUNT") {
-      discountAmount = appliedCoupon.discountValue;
+      discountAmount = Number(appliedCoupon.discountValue);
     }
-    discountAmount = Math.min(discountAmount, subtotalCartAmount); // Discount cannot exceed subtotal
+    discountAmount = Math.min(discountAmount, subtotalCartAmount); 
   }
   const totalCartAmount = subtotalCartAmount - discountAmount;
 
@@ -175,9 +191,9 @@ export default function NewOrderPage() {
     try {
         const coupon = await getActiveCouponByCode(couponCode);
         if (coupon) {
-            if (coupon.minOrderAmount && subtotalCartAmount < coupon.minOrderAmount) {
+            if (coupon.minOrderAmount && subtotalCartAmount < Number(coupon.minOrderAmount)) {
                  setAppliedCoupon(null);
-                 setCouponMessage({ type: 'error', text: `Este cupom requer um pedido mínimo de R$ ${coupon.minOrderAmount.toFixed(2).replace('.', ',')}.` });
+                 setCouponMessage({ type: 'error', text: `Este cupom requer um pedido mínimo de R$ ${Number(coupon.minOrderAmount).toFixed(2).replace('.', ',')}.` });
             } else {
                 setAppliedCoupon(coupon);
                 setCouponMessage({ type: 'success', text: `Cupom "${coupon.code}" aplicado! ${coupon.description || ''}` });
@@ -212,28 +228,24 @@ export default function NewOrderPage() {
 
     setIsSubmitting(true);
     try {
-      // Re-verify coupon just before submitting, in case cart changed or coupon expired
       let finalCouponCode = undefined;
-      if (appliedCoupon && couponCode === appliedCoupon.code) { // Check if current couponCode still matches the applied one
+      if (appliedCoupon && couponCode === appliedCoupon.code) { 
         const freshCoupon = await getActiveCouponByCode(appliedCoupon.code);
-        if (freshCoupon && (!freshCoupon.minOrderAmount || subtotalCartAmount >= freshCoupon.minOrderAmount)) {
+        if (freshCoupon && (!freshCoupon.minOrderAmount || subtotalCartAmount >= Number(freshCoupon.minOrderAmount))) {
             finalCouponCode = freshCoupon.code;
         } else {
-            // Coupon became invalid, inform user and proceed without it
             toast({ title: "Cupom Inválido", description: "O cupom aplicado não é mais válido para este carrinho. Pedido será enviado sem desconto.", variant: "default" });
             setAppliedCoupon(null);
             setCouponMessage(null);
         }
       }
 
-
       const orderData: NewOrderClientData = {
         customerName,
         customerAddress,
-        customerCep,
+        customerCep: customerCep.replace(/\D/g, ''), // Envia CEP limpo
         customerReferencePoint,
         items: cart.map(ci => ({ 
-            id: ci.id, // This will be ignored by backend, backend creates its own OrderItem ID
             menuItemId: ci.menuItemId,
             name: ci.name, 
             quantity: ci.quantity, 
@@ -259,7 +271,8 @@ export default function NewOrderPage() {
       setAppliedCoupon(null);
       setCouponMessage(null);
     } catch (error) {
-      toast({ title: "Erro ao Enviar Pedido", description: "Houve um problema ao registrar seu pedido. Tente novamente.", variant: "destructive" });
+      console.error("Erro ao enviar pedido:", error);
+      toast({ title: "Erro ao Enviar Pedido", description: "Houve um problema ao registrar seu pedido. Verifique o console e tente novamente.", variant: "destructive" });
     } finally {
       setIsSubmitting(false);
     }
@@ -292,7 +305,13 @@ export default function NewOrderPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2 items-end">
                     <div>
                         <Label htmlFor="customerCep">CEP</Label>
-                        <Input id="customerCep" value={customerCep} onChange={e => setCustomerCep(e.target.value)} placeholder="Ex: 01001-000" />
+                        <Input 
+                            id="customerCep" 
+                            value={customerCep} 
+                            onChange={handleCepChange} 
+                            placeholder="Ex: 12345-678" 
+                            maxLength={9} // 8 dígitos + traço
+                        />
                     </div>
                     <Button type="button" onClick={handleCepSearch} disabled={isFetchingCep} className="w-full sm:w-auto">
                         {isFetchingCep ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
@@ -356,7 +375,7 @@ export default function NewOrderPage() {
                                 {item.description && <CardDescription className="text-xs mt-1">{item.description}</CardDescription>}
                               </CardHeader>
                               <CardContent className="flex-grow">
-                                <p className="text-lg font-semibold text-primary">R$ {item.price.toFixed(2).replace('.', ',')}</p>
+                                <p className="text-lg font-semibold text-primary">R$ {Number(item.price).toFixed(2).replace('.', ',')}</p>
                               </CardContent>
                               <CardFooter>
                                 <Button type="button" onClick={() => addToCart(item)} className="w-full">
@@ -506,7 +525,7 @@ export default function NewOrderPage() {
                 />
                 <DialogFooter>
                     <DialogClose asChild>
-                         <Button variant="outline" onClick={() => { setEditingCartItemIndex(null); setCurrentItemNote(''); }}>Cancelar</Button>
+                         <Button variant="outline" onClick={() => { setEditingCartItemIndex(null); setCurrentItemNote(''); setIsItemNotesModalOpen(false); }}>Cancelar</Button>
                     </DialogClose>
                     <Button onClick={handleSaveItemNote}>Salvar Observação</Button>
                 </DialogFooter>

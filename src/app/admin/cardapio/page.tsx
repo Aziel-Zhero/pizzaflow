@@ -20,13 +20,14 @@ import Image from 'next/image';
 
 const PIZZERIA_NAME = "Pizzaria Planeta";
 
-const initialMenuItemFormState: Omit<MenuItem, 'id'> = {
+const initialMenuItemFormState: Omit<MenuItem, 'id' | 'createdAt' | 'updatedAt' > = {
   name: '',
-  price: 0,
+  price: 0, // Será string no input, convertido para número no estado
   category: '',
   description: '',
   imageUrl: '',
   isPromotion: false,
+  dataAiHint: '',
 };
 
 export default function MenuManagementPage() {
@@ -34,7 +35,10 @@ export default function MenuManagementPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
-  const [currentItem, setCurrentItem] = useState<MenuItem | Omit<MenuItem, 'id'>>(initialMenuItemFormState);
+  // Usar string para preço no formulário para melhor UX, converter antes de enviar
+  const [currentItem, setCurrentItem] = useState<Omit<MenuItem, 'id' | 'createdAt' | 'updatedAt' > & { price: string | number }>(
+      {...initialMenuItemFormState, price: ''}
+  );
   const [isEditing, setIsEditing] = useState(false);
   const { toast } = useToast();
 
@@ -52,11 +56,16 @@ export default function MenuManagementPage() {
 
   useEffect(() => {
     fetchMenuItems();
-  }, []); // Removed toast from dependency array to prevent potential loops if toast itself changes frequently
+  }, []);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
-    setCurrentItem(prev => ({ ...prev, [name]: name === 'price' ? parseFloat(value) || 0 : value }));
+    if (name === 'price') {
+      // Permite entrada decimal, mas mantém como string no estado do formulário
+      setCurrentItem(prev => ({ ...prev, price: value }));
+    } else {
+      setCurrentItem(prev => ({ ...prev, [name]: value }));
+    }
   };
 
   const handleCheckboxChange = (checked: boolean | "indeterminate") => {
@@ -70,10 +79,10 @@ export default function MenuManagementPage() {
 
   const handleOpenEditDialog = (item?: MenuItem) => {
     if (item) {
-      setCurrentItem(item);
+      setCurrentItem({...item, price: item.price.toString()}); // Converte preço para string ao editar
       setIsEditing(true);
     } else {
-      setCurrentItem(initialMenuItemFormState);
+      setCurrentItem({...initialMenuItemFormState, price: ''});
       setIsEditing(false);
     }
     setIsEditDialogOpen(true);
@@ -81,35 +90,50 @@ export default function MenuManagementPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!currentItem.name || !currentItem.category || currentItem.price <= 0) {
-        toast({ title: "Campos Obrigatórios", description: "Nome, categoria e preço (maior que zero) são obrigatórios.", variant: "destructive" });
+    const priceAsNumber = parseFloat(String(currentItem.price).replace(',', '.'));
+
+    if (!currentItem.name || !currentItem.category || isNaN(priceAsNumber) || priceAsNumber <= 0) {
+        toast({ title: "Campos Obrigatórios", description: "Nome, categoria e preço válido (maior que zero) são obrigatórios.", variant: "destructive" });
         return;
     }
     setIsSubmitting(true);
+
+    const itemDataForApi = {
+        ...currentItem,
+        price: priceAsNumber, // Envia como número
+    };
+
     try {
-      if (isEditing && 'id' in currentItem) {
-        await updateMenuItem(currentItem as MenuItem);
+      if (isEditing && 'id' in currentItem && typeof currentItem.id === 'string') { // Verifica se currentItem tem 'id'
+        await updateMenuItem({ ...itemDataForApi, id: currentItem.id } as MenuItem); // Cast para MenuItem
         toast({ title: "Sucesso", description: "Item do cardápio atualizado.", variant: "default" });
       } else {
-        await addMenuItem(currentItem as Omit<MenuItem, 'id'>);
+        // Para adicionar, removemos o 'id' se ele existir por engano no objeto
+        const { id, ...dataToAdd } = itemDataForApi as any; // eslint-disable-line @typescript-eslint/no-unused-vars
+        await addMenuItem(dataToAdd as Omit<MenuItem, 'id' | 'createdAt' | 'updatedAt' >);
         toast({ title: "Sucesso", description: "Novo item adicionado ao cardápio.", variant: "default" });
       }
       fetchMenuItems();
       setIsEditDialogOpen(false);
     } catch (error) {
-      toast({ title: "Erro", description: `Falha ao ${isEditing ? 'atualizar' : 'adicionar'} item.`, variant: "destructive" });
+      console.error("Erro ao salvar item:", error);
+      toast({ title: "Erro", description: `Falha ao ${isEditing ? 'atualizar' : 'adicionar'} item. Verifique o console.`, variant: "destructive" });
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const handleDeleteItem = async (itemId: string) => {
-    if (!confirm("Tem certeza que deseja excluir este item do cardápio?")) return;
+    if (!confirm("Tem certeza que deseja excluir este item do cardápio? Esta ação não pode ser desfeita.")) return;
     setIsSubmitting(true);
     try {
-      await deleteMenuItem(itemId);
-      toast({ title: "Sucesso", description: "Item excluído do cardápio.", variant: "default" });
-      fetchMenuItems();
+      const success = await deleteMenuItem(itemId);
+      if (success) {
+        toast({ title: "Sucesso", description: "Item excluído do cardápio.", variant: "default" });
+        fetchMenuItems();
+      } else {
+        toast({ title: "Erro", description: "Não foi possível excluir o item. Ele pode estar associado a pedidos existentes.", variant: "destructive" });
+      }
     } catch (error) {
       toast({ title: "Erro", description: "Falha ao excluir o item.", variant: "destructive" });
     } finally {
@@ -178,7 +202,7 @@ export default function MenuManagementPage() {
                          {item.description && <CardDescription className="text-xs mt-1 h-10 overflow-hidden text-ellipsis">{item.description}</CardDescription>}
                       </CardHeader>
                       <CardContent className="flex-grow">
-                        <p className="text-lg font-bold text-primary mb-2">R$ {item.price.toFixed(2).replace('.', ',')}</p>
+                        <p className="text-lg font-bold text-primary mb-2">R$ {Number(item.price).toFixed(2).replace('.', ',')}</p>
                       </CardContent>
                       <CardFooter className="gap-2 border-t pt-4">
                         <Button variant="outline" size="sm" onClick={() => handleOpenEditDialog(item)} className="flex-1">
@@ -211,7 +235,15 @@ export default function MenuManagementPage() {
               </div>
               <div>
                 <Label htmlFor="price">Preço (R$)</Label>
-                <Input id="price" name="price" type="number" step="0.01" min="0" value={currentItem.price} onChange={handleInputChange} required />
+                <Input 
+                    id="price" 
+                    name="price" 
+                    type="text" // Usar text para permitir vírgula e ponto, mas validar como número
+                    value={String(currentItem.price)} 
+                    onChange={handleInputChange} 
+                    placeholder="Ex: 25.50 ou 25,50"
+                    required 
+                />
               </div>
                <div>
                 <Label htmlFor="category">Categoria</Label>
@@ -251,7 +283,7 @@ export default function MenuManagementPage() {
               </div>
               <DialogFooter>
                 <DialogClose asChild>
-                    <Button type="button" variant="outline">Cancelar</Button>
+                    <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)}>Cancelar</Button>
                 </DialogClose>
                 <Button type="submit" disabled={isSubmitting}>
                   {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -268,4 +300,3 @@ export default function MenuManagementPage() {
     </div>
   );
 }
-

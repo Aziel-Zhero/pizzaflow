@@ -15,9 +15,9 @@ import type {
 import type { 
     Order, 
     MenuItem, 
-    OrderItem, // This is our client-side OrderItem, might differ slightly from PrismaOrderItem
+    OrderItem, 
     NewOrderClientData,
-    NewOrderClientItemData, // Added this for clarity
+    NewOrderClientItemData, 
     OrderStatus, 
     PaymentType,
     PaymentStatus,
@@ -33,14 +33,17 @@ import type {
     CouponUsageData,
     Coupon
 } from '@/lib/types';
-// import { PIZZERIA_ADDRESS } from '@/lib/types'; // No longer used directly in AI call from here
 import { optimizeDeliveryRoute as aiOptimizeDeliveryRoute, optimizeMultiDeliveryRoute as aiOptimizeMultiDeliveryRoute } from '@/ai/flows/optimize-delivery-route';
 import { format, subDays, parseISO, differenceInMinutes, startOfDay, endOfDay } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Decimal } from '@prisma/client/runtime/library'; 
+import { Decimal } from '@prisma/client/runtime/library'; // Importação correta
 
 // Helper para converter Decimal para number e datas para string ISO
+// E BigInt para string para serialização segura.
 const toJSONSafe = <T>(data: T): T => {
+  if (data === null || data === undefined) {
+    return data;
+  }
   return JSON.parse(JSON.stringify(data, (key, value) => {
     if (value instanceof Decimal) {
       return Number(value.toFixed(2));
@@ -67,10 +70,12 @@ export async function getAvailableMenuItems(): Promise<MenuItem[]> {
 export async function addMenuItem(item: Omit<MenuItem, 'id' | 'createdAt' | 'updatedAt' | 'orderItems'>): Promise<MenuItem> {
   const newItem = await prisma.menuItem.create({
     data: {
-      ...item,
-      price: new Decimal(item.price), // Garante que o preço seja Decimal
+      name: item.name,
+      price: new Decimal(item.price), 
+      category: item.category,
       description: item.description || null,
       imageUrl: item.imageUrl || null,
+      isPromotion: item.isPromotion || false,
       dataAiHint: item.dataAiHint || null,
     },
   });
@@ -82,10 +87,12 @@ export async function updateMenuItem(updatedItem: MenuItem): Promise<MenuItem | 
     const item = await prisma.menuItem.update({
       where: { id: updatedItem.id },
       data: {
-        ...updatedItem,
-        price: new Decimal(updatedItem.price), // Garante que o preço seja Decimal
+        name: updatedItem.name,
+        price: new Decimal(updatedItem.price),
+        category: updatedItem.category,
         description: updatedItem.description || null,
         imageUrl: updatedItem.imageUrl || null,
+        isPromotion: updatedItem.isPromotion || false,
         dataAiHint: updatedItem.dataAiHint || null,
       },
     });
@@ -98,10 +105,16 @@ export async function updateMenuItem(updatedItem: MenuItem): Promise<MenuItem | 
 
 export async function deleteMenuItem(itemId: string): Promise<boolean> {
   try {
-    // Primeiro, verificar se o item está em algum OrderItem.
-    // Se estiver, idealmente não deveria ser excluído, ou os OrderItems deveriam ser tratados.
-    // Por simplicidade, vamos permitir a exclusão. Em um app real, adicione lógica de verificação.
-    // await prisma.orderItem.deleteMany({ where: { menuItemId: itemId }}); // Opcional: remover dos pedidos
+    // Verificar se o item está em algum OrderItem. Se estiver, não permitir a exclusão
+    // ou tratar os OrderItems (ex: marcar como item excluído).
+    // Por simplicidade, vamos verificar.
+    const orderItemsCount = await prisma.orderItem.count({ where: { menuItemId: itemId } });
+    if (orderItemsCount > 0) {
+        console.warn(`Tentativa de excluir MenuItem ${itemId} que está em ${orderItemsCount} pedidos. Exclusão bloqueada.`);
+        // Idealmente, lançar um erro ou retornar um objeto com status e mensagem.
+        // throw new Error("Não é possível excluir um item do cardápio que já foi pedido. Considere desativá-lo.");
+        return false; 
+    }
     await prisma.menuItem.delete({
       where: { id: itemId },
     });
@@ -115,11 +128,9 @@ export async function deleteMenuItem(itemId: string): Promise<boolean> {
 // --- Funções de Pedidos ---
 export async function getOrders(): Promise<Order[]> {
   const orders = await prisma.order.findMany({
-    where: { status: { not: PrismaOrderStatus.Cancelado } },
+    where: { status: { not: PrismaOrderStatus.Cancelado } }, // Exclui cancelados por padrão na listagem principal
     include: { 
-        items: {
-            include: { menuItem: true } // Para ter acesso ao imageUrl e outros dados do MenuItem original se necessário
-        }, 
+        items: true, // OrderItem já tem name, price, etc. Não precisa do menuItem aqui.
         coupon: true 
     },
     orderBy: { createdAt: 'desc' },
@@ -131,9 +142,7 @@ export async function getOrderById(orderId: string): Promise<Order | null> {
   const order = await prisma.order.findUnique({
     where: { id: orderId },
     include: { 
-        items: {
-            include: { menuItem: true }
-        }, 
+        items: true,
         coupon: true 
     },
   });
@@ -209,7 +218,7 @@ export async function updateOrderDetails(updatedOrderData: Order): Promise<Order
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { items, coupon, createdAt, updatedAt, ...orderData } = updatedOrderData; 
     
-    const dataForUpdate: any = { // Usar 'any' temporariamente para flexibilidade
+    const dataForUpdate: any = { 
         ...orderData,
         totalAmount: new Decimal(orderData.totalAmount),
         paymentType: orderData.paymentType ? orderData.paymentType as PrismaPaymentType : null,
@@ -220,7 +229,13 @@ export async function updateOrderDetails(updatedOrderData: Order): Promise<Order
     if (orderData.appliedCouponDiscount !== undefined && orderData.appliedCouponDiscount !== null) {
         dataForUpdate.appliedCouponDiscount = new Decimal(orderData.appliedCouponDiscount);
     } else {
-        dataForUpdate.appliedCouponDiscount = null;
+        // Explicitamente define como null se for undefined ou null vindo do cliente.
+        // O Prisma pode interpretar 'undefined' de formas diferentes de 'null'.
+        dataForUpdate.appliedCouponDiscount = null; 
+    }
+    // Remove couponId se não houver cupom aplicado para evitar erro de constraint
+    if (!orderData.couponId) {
+        dataForUpdate.couponId = null;
     }
 
 
@@ -243,7 +258,7 @@ export async function addNewOrder(newOrderData: NewOrderClientData): Promise<Ord
       subTotal += item.price * item.quantity;
   }
 
-  let finalTotalAmount = subTotal;
+  let finalTotalAmount = new Decimal(subTotal);
   let appliedCoupon: PrismaCoupon | null = null;
   let couponDiscountAmount = new Decimal(0);
 
@@ -257,7 +272,7 @@ export async function addNewOrder(newOrderData: NewOrderClientData): Promise<Ord
       if (potentialCoupon.expiresAt && new Date(potentialCoupon.expiresAt) < new Date()) {
         isValid = false; 
       }
-      if (isValid && potentialCoupon.usageLimit && potentialCoupon.timesUsed >= potentialCoupon.usageLimit) {
+      if (isValid && potentialCoupon.usageLimit !== null && potentialCoupon.timesUsed >= potentialCoupon.usageLimit) {
         isValid = false; 
       }
       if (isValid && potentialCoupon.minOrderAmount && new Decimal(subTotal).lt(potentialCoupon.minOrderAmount)) {
@@ -271,17 +286,16 @@ export async function addNewOrder(newOrderData: NewOrderClientData): Promise<Ord
 
   if (appliedCoupon) {
     if (appliedCoupon.discountType === PrismaDiscountType.PERCENTAGE) {
-      couponDiscountAmount = new Decimal(subTotal).mul(appliedCoupon.discountValue.div(100));
+      couponDiscountAmount = finalTotalAmount.mul(appliedCoupon.discountValue.div(100));
     } else if (appliedCoupon.discountType === PrismaDiscountType.FIXED_AMOUNT) {
       couponDiscountAmount = appliedCoupon.discountValue;
     }
     // Ensure discount doesn't exceed subtotal
-    if (couponDiscountAmount.gt(new Decimal(subTotal))) {
-        couponDiscountAmount = new Decimal(subTotal);
+    if (couponDiscountAmount.gt(finalTotalAmount)) {
+        couponDiscountAmount = finalTotalAmount;
     }
-    finalTotalAmount = new Decimal(subTotal).sub(couponDiscountAmount).toNumber();
+    finalTotalAmount = finalTotalAmount.sub(couponDiscountAmount);
   }
-
 
   const order = await prisma.order.create({
     data: {
@@ -289,7 +303,7 @@ export async function addNewOrder(newOrderData: NewOrderClientData): Promise<Ord
       customerAddress: newOrderData.customerAddress,
       customerCep: newOrderData.customerCep,
       customerReferencePoint: newOrderData.customerReferencePoint,
-      totalAmount: new Decimal(finalTotalAmount.toFixed(2)),
+      totalAmount: finalTotalAmount, // Já é Decimal
       paymentType: newOrderData.paymentType ? newOrderData.paymentType as PrismaPaymentType : null,
       notes: newOrderData.notes,
       status: PrismaOrderStatus.Pendente,
@@ -304,7 +318,7 @@ export async function addNewOrder(newOrderData: NewOrderClientData): Promise<Ord
         })),
       },
       appliedCouponCode: appliedCoupon?.code,
-      appliedCouponDiscount: appliedCoupon ? couponDiscountAmount : null,
+      appliedCouponDiscount: appliedCoupon ? couponDiscountAmount : null, // Já é Decimal ou null
       couponId: appliedCoupon?.id,
     },
     include: { items: true, coupon: true },
@@ -316,14 +330,19 @@ export async function addNewOrder(newOrderData: NewOrderClientData): Promise<Ord
       data: { timesUsed: { increment: 1 } },
     });
   }
-
+  console.log("Novo pedido criado no banco:", order.id);
   return toJSONSafe(order);
 }
 
 
 export async function simulateNewOrder(): Promise<Order> {
+    console.log("Iniciando simulação de novo pedido...");
     const menuItems = await getAvailableMenuItems();
-    if (menuItems.length === 0) throw new Error("Cardápio está vazio, não é possível simular pedido.");
+    if (menuItems.length === 0) {
+        console.error("Cardápio está vazio, não é possível simular pedido.");
+        throw new Error("Cardápio está vazio, não é possível simular pedido.");
+    }
+    console.log(`Itens do cardápio disponíveis: ${menuItems.length}`);
 
     const customerNames = ["Laura Mendes", "Pedro Alves", "Sofia Lima", "Bruno Gomes", "Gabriela Rocha", "Rafael Souza"];
     
@@ -337,7 +356,7 @@ export async function simulateNewOrder(): Promise<Order> {
             menuItemId: menuItem.id,
             name: menuItem.name,
             quantity: 1, 
-            price: menuItem.price, // Preço no momento da simulação
+            price: menuItem.price, 
         };
         if (Math.random() < 0.2) {
             item.itemNotes = "Observação simulada para item.";
@@ -354,6 +373,7 @@ export async function simulateNewOrder(): Promise<Order> {
              price: fallbackItem.price 
         });
     }
+    console.log(`Itens do pedido simulado: ${orderItemsClient.length}`);
 
     const randomCustomer = customerNames[Math.floor(Math.random() * customerNames.length)];
     const paymentTypesClient: PaymentType[] = ["Dinheiro", "Cartao", "Online"]; 
@@ -361,18 +381,28 @@ export async function simulateNewOrder(): Promise<Order> {
     
     const newOrderPayload: NewOrderClientData = {
         customerName: randomCustomer,
-        customerAddress: `${Math.floor(Math.random()*900)+100} Rua Aleatória, Bairro Distante, Cidade Exemplo, CE`,
+        customerAddress: `${Math.floor(Math.random()*900)+100} Rua Simulada, Bairro Teste, Cidade Exemplo, UF`,
         customerCep: `${Math.floor(Math.random()*90000)+10000}-000`,
-        customerReferencePoint: Math.random() > 0.5 ? "Próximo ao mercado azul" : "",
+        customerReferencePoint: Math.random() > 0.5 ? "Próximo ao poste vermelho" : "",
         items: orderItemsClient,
         paymentType: randomPaymentType,
-        notes: Math.random() > 0.7 ? "Entregar o mais rápido possível." : ""
+        notes: Math.random() > 0.7 ? "Simulação: Entregar o mais rápido possível." : ""
     };
-    return addNewOrder(newOrderPayload); // addNewOrder já usa toJSONSafe
+
+    console.log("Payload do pedido simulado:", newOrderPayload);
+    try {
+        const createdOrder = await addNewOrder(newOrderPayload);
+        console.log("Pedido simulado criado com sucesso no banco:", createdOrder.id);
+        return createdOrder; // addNewOrder já usa toJSONSafe
+    } catch (error) {
+        console.error("Erro ao criar pedido simulado no banco:", error);
+        throw error;
+    }
 }
 
 // --- Funções de IA ---
-export async function optimizeRouteAction(input: OptimizeDeliveryRouteInput): Promise<OptimizeDeliveryRouteOutput> {
+export async function optimizeRouteAction(pizzeriaAddress: string, customerAddress: string): Promise<OptimizeDeliveryRouteOutput> {
+    const input: OptimizeDeliveryRouteInput = { pizzeriaAddress, customerAddress };
     return aiOptimizeDeliveryRoute(input);
 }
 
@@ -430,7 +460,7 @@ export async function getDashboardAnalytics(): Promise<DashboardAnalyticsData> {
     }));
 
   const dailyRevenueMap = new Map<string, number>();
-  const today = startOfDay(new Date()); // Use startOfDay for consistent comparison
+  const today = startOfDay(new Date()); 
   for (let i = 6; i >= 0; i--) {
     const day = subDays(today, i);
     const formattedDay = format(day, 'dd/MM', { locale: ptBR });
@@ -475,7 +505,7 @@ export async function getDashboardAnalytics(): Promise<DashboardAnalyticsData> {
     totalDiscountAmount,
   };
 
-  return toJSONSafe({ // Ensure the final returned object is also safe
+  return toJSONSafe({ 
     totalOrders,
     totalRevenue,
     averageOrderValue,
@@ -489,7 +519,7 @@ export async function getDashboardAnalytics(): Promise<DashboardAnalyticsData> {
 
 // --- Funções de Exportação e CEP ---
 export async function exportOrdersToCSV(): Promise<string> {
-  const ordersToExport = await getOrders(); // This already uses Prisma and toJSONSafe
+  const ordersToExport = await getOrders(); 
   if (ordersToExport.length === 0) {
     return "Nenhum pedido para exportar.";
   }
@@ -523,7 +553,7 @@ export async function exportOrdersToCSV(): Promise<string> {
       order.paymentStatus,
       (order.notes || '').replace(/[\r\n,]+/g, ' '), 
       (order.optimizedRoute || ''),
-      (order.nfeLink || ''), // NFe Link
+      (order.nfeLink || ''), 
       order.appliedCouponCode || '',
       order.appliedCouponDiscount ? Number(order.appliedCouponDiscount).toFixed(2).replace('.', ',') : '0,00'
     ].map(field => `"${String(field === null || field === undefined ? '' : field).replace(/"/g, '""')}"`).join(',');
@@ -533,7 +563,6 @@ export async function exportOrdersToCSV(): Promise<string> {
 }
 
 export async function fetchAddressFromCep(cep: string): Promise<CepAddress | null> {
-  // Simulação de API de CEP
   await new Promise(resolve => setTimeout(resolve, 600)); 
   
   const cleanedCep = cep.replace(/\D/g, '');
@@ -543,12 +572,11 @@ export async function fetchAddressFromCep(cep: string): Promise<CepAddress | nul
   }
 
   console.log(`Simulando busca por CEP: ${cleanedCep}`);
-  // Adicionando o CEP do usuário à simulação
   if (cleanedCep === "12402170") {
     return {
-      street: "Rua Doutor José Ortiz Monteiro Patto (Mock)",
-      neighborhood: "Campo Alegre (Mock)",
-      city: "Pindamonhangaba (Mock)",
+      street: "Rua Doutor José Ortiz Monteiro Patto",
+      neighborhood: "Campo Alegre",
+      city: "Pindamonhangaba",
       state: "SP",
       fullAddress: "Rua Doutor José Ortiz Monteiro Patto, Campo Alegre, Pindamonhangaba - SP"
     };
@@ -560,17 +588,16 @@ export async function fetchAddressFromCep(cep: string): Promise<CepAddress | nul
       state: "CF",
       fullAddress: "Rua das Maravilhas (Mock), Bairro Sonho (Mock), Cidade Fantasia (Mock) - CF"
     };
-  } else if (cleanedCep === "01001000") { // Exemplo da Praça da Sé
+  } else if (cleanedCep === "01001000") { 
      return {
-      street: "Praça da Sé (Mock)",
-      neighborhood: "Sé (Mock)",
-      city: "São Paulo (Mock)",
+      street: "Praça da Sé",
+      neighborhood: "Sé",
+      city: "São Paulo",
       state: "SP",
-      fullAddress: "Praça da Sé (Mock), Sé (Mock), São Paulo (Mock) - SP"
+      fullAddress: "Praça da Sé, Sé, São Paulo - SP"
     };
   }
   
-  // Fallback para outros CEPs não encontrados na simulação
   console.warn(`CEP ${cleanedCep} não encontrado na simulação. Adicione-o ou use uma API real.`);
   return null; 
 }
@@ -589,7 +616,7 @@ export async function getActiveCouponByCode(code: string): Promise<Coupon | null
     });
 
     if (coupon) {
-        if (coupon.usageLimit && coupon.timesUsed >= coupon.usageLimit) {
+        if (coupon.usageLimit !== null && coupon.timesUsed >= coupon.usageLimit) {
             return null; 
         }
     }
@@ -607,32 +634,26 @@ export async function createCoupon(data: Omit<PrismaCoupon, 'id' | 'createdAt' |
     return toJSONSafe(coupon);
 }
 
-async function seedInitialCoupon() {
-    const existingCoupon = await prisma.coupon.findUnique({ where: { code: 'PROMO10' } });
-    if (!existingCoupon) {
-        try {
-            await createCoupon({
-                code: 'PROMO10',
-                description: '10% de desconto na sua primeira compra!',
-                discountType: PrismaDiscountType.PERCENTAGE,
-                discountValue: new Decimal(10),
-                isActive: true,
-                expiresAt: null, 
-                usageLimit: null, 
-                minOrderAmount: new Decimal(20.00) 
-            });
-            console.log("Cupom PROMO10 criado com sucesso.");
-        } catch (error) {
-            console.error("Falha ao criar cupom PROMO10:", error);
-        }
-    } else {
-        console.log("Cupom PROMO10 já existe.");
-    }
-}
-// Chamar a função de seed para garantir que o cupom de teste exista (apenas para desenvolvimento)
-// Idealmente, isso seria parte de um script de seed do Prisma separado.
+// async function seedInitialCoupon() {
+//     const existingCoupon = await prisma.coupon.findUnique({ where: { code: 'PROMO10' } });
+//     if (!existingCoupon) {
+//         try {
+//             await createCoupon({
+//                 code: 'PROMO10',
+//                 description: '10% de desconto na sua primeira compra!',
+//                 discountType: PrismaDiscountType.PERCENTAGE,
+//                 discountValue: new Decimal(10), // Prisma espera Decimal
+//                 isActive: true,
+//                 expiresAt: null, 
+//                 usageLimit: null, 
+//                 minOrderAmount: new Decimal(20.00) // Prisma espera Decimal
+//             });
+//             console.log("Cupom PROMO10 criado com sucesso.");
+//         } catch (error) {
+//             console.error("Falha ao criar cupom PROMO10:", error);
+//         }
+//     } else {
+//         console.log("Cupom PROMO10 já existe.");
+//     }
+// }
 // seedInitialCoupon(); // Descomente para rodar uma vez na inicialização do dev server
-
-// Garantir que todas as funções exportadas que retornam dados do Prisma usem toJSONSafe
-// onde a serialização é necessária para o cliente.
-// A maioria já está usando, mas é uma boa prática verificar.

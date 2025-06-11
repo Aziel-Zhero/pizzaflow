@@ -1,94 +1,47 @@
+// Este script de seed era para o Prisma.
+// Com Drizzle ORM, um novo mecanismo de seed precisará ser criado.
+// Por exemplo, um script TS que usa o cliente Drizzle de src/lib/db.ts para inserir dados.
+// Você pode remover este arquivo.
 
-import { PrismaClient, Prisma, DiscountType as PrismaDiscountTypeEnum } from '@prisma/client';
-import { withAccelerate } from '@prisma/extension-accelerate';
-
-// Inicialize o Prisma Client. 
-// Para o script de seed, você pode optar por usar a DIRECT_URL se o Accelerate apresentar problemas
-// ou se o seed for executado em um ambiente onde o Accelerate não é o principal meio de acesso (ex: CI local).
-// No entanto, para consistência com seu setup de runtime, usaremos Accelerate aqui.
-// Certifique-se que DATABASE_URL no seu .env aponta para a string de conexão do Accelerate.
-const prisma = new PrismaClient().$extends(withAccelerate());
+// Exemplo de como poderia ser um seed com Drizzle (NÃO EXECUTÁVEL DIRETAMENTE PELO 'prisma db seed'):
+/*
+import { db } from '../src/lib/db'; // Ajuste o caminho conforme necessário
+import { menuItems, coupons } from '../src/lib/schema'; // Importe suas tabelas/schemas
+import { sql } from 'drizzle-orm';
 
 async function main() {
-  console.log(`Start seeding ...`);
+  console.log('Start seeding with Drizzle...');
 
-  // Exemplo: Criar/atualizar itens de menu
-  const pizzaMargherita = await prisma.menuItem.upsert({
-    where: { name: 'Pizza Margherita (Seed)' }, // Usar um campo único para evitar duplicatas
-    update: {
-        price: new Prisma.Decimal(36.90), // Exemplo de atualização de preço se já existir
-        description: 'Clássica pizza com molho de tomate fresco, mozzarella de alta qualidade e manjericão. (Semeado)',
-        category: 'Pizzas Salgadas',
-        imageUrl: 'https://placehold.co/600x400.png',
-        dataAiHint: 'pizza margherita'
-    },
-    create: {
-      name: 'Pizza Margherita (Seed)',
-      price: new Prisma.Decimal(35.90),
+  // Exemplo de upsert para MenuItem (Drizzle não tem upsert direto como Prisma, requer mais lógica ou raw SQL)
+  // Ou simplesmente insira, assumindo que o banco está limpo ou você gerencia duplicatas
+  await db.insert(menuItems).values([
+    {
+      name: 'Pizza Margherita (Drizzle Seed)',
+      price: '35.90', // Drizzle espera strings para decimais na inserção
       category: 'Pizzas Salgadas',
-      description: 'Clássica pizza com molho de tomate fresco, mozzarella de alta qualidade e manjericão. (Semeado)',
+      description: 'Clássica pizza com molho de tomate fresco, mozzarella e manjericão. (Semeado com Drizzle)',
       imageUrl: 'https://placehold.co/600x400.png',
       dataAiHint: 'pizza margherita',
-      isPromotion: false,
     },
-  });
-  console.log(`Created/updated menu item: ${pizzaMargherita.name} (ID: ${pizzaMargherita.id})`);
+    // Adicione mais itens
+  ]).onConflictDoNothing(); // Exemplo de como lidar com conflitos (requer constraint unique no 'name')
 
-  const pizzaCalabresa = await prisma.menuItem.upsert({
-    where: { name: 'Pizza Calabresa (Seed)' },
-    update: {},
-    create: {
-      name: 'Pizza Calabresa (Seed)',
-      price: new Prisma.Decimal(38.50),
-      category: 'Pizzas Salgadas',
-      description: 'Deliciosa pizza com calabresa artesanal, cebola e azeitonas. (Semeado)',
-      imageUrl: 'https://placehold.co/600x400.png',
-      dataAiHint: 'pizza calabresa',
-      isPromotion: true,
-    },
-  });
-  console.log(`Created/updated menu item: ${pizzaCalabresa.name} (ID: ${pizzaCalabresa.id})`);
-
-  const cocaCola = await prisma.menuItem.upsert({
-    where: { name: 'Coca-Cola Lata (Seed)' },
-    update: {},
-    create: {
-      name: 'Coca-Cola Lata (Seed)',
-      price: new Prisma.Decimal(6.50),
-      category: 'Bebidas',
-      description: 'Refrigerante Coca-Cola em lata 350ml. (Semeado)',
-      imageUrl: 'https://placehold.co/300x300.png',
-      dataAiHint: 'coca cola',
-    },
-  });
-  console.log(`Created/updated menu item: ${cocaCola.name} (ID: ${cocaCola.id})`);
-
-  // Exemplo: Criar/atualizar um cupom
-  const couponBemVindo = await prisma.coupon.upsert({
-    where: { code: 'BEMVINDO10SEED' },
-    update: {},
-    create: {
-      code: 'BEMVINDO10SEED',
-      description: '10% de desconto para novos clientes! (Semeado)',
-      discountType: PrismaDiscountTypeEnum.PERCENTAGE,
-      discountValue: new Prisma.Decimal(10),
+  await db.insert(coupons).values([
+    {
+      code: 'DRIZZLE10',
+      description: '10% de desconto com Drizzle!',
+      discountType: 'PERCENTAGE',
+      discountValue: '10', // String para decimal
       isActive: true,
-      expiresAt: new Date(new Date().setDate(new Date().getDate() + 30)), // Expira em 30 dias
-      usageLimit: 100,
-      minOrderAmount: new Prisma.Decimal(20.00),
-    },
-  });
-  console.log(`Created/updated coupon: ${couponBemVindo.code} (ID: ${couponBemVindo.id})`);
+      minOrderAmount: '20.00', // String para decimal
+    }
+  ]).onConflictDoNothing(); // Requer constraint unique no 'code'
 
-  console.log(`Seeding finished.`);
+  console.log('Seeding finished.');
 }
 
-main()
-  .catch(async (e) => {
-    console.error('Error during seeding:', e);
-    await prisma.$disconnect();
-    process.exit(1);
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+main().catch((e) => {
+  console.error('Error during Drizzle seeding:', e);
+  process.exit(1);
+});
+*/

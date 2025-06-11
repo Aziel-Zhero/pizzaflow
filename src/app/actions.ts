@@ -39,8 +39,7 @@ export async function getAvailableMenuItems(): Promise<MenuItem[]> {
     console.log(`actions.ts: Found ${itemsFromDb.length} menu items.`);
     return itemsFromDb.map(item => ({
         ...item,
-        price: parseFloat(item.price as string), // Drizzle/pg retorna decimal como string
-        // createdAt e updatedAt não estão no tipo MenuItem, então não precisamos converter aqui.
+        price: parseFloat(item.price as string), 
     }));
   } catch (error) {
     console.error("actions.ts: Error fetching menu items from DB with Drizzle:", error);
@@ -53,13 +52,12 @@ export async function addMenuItem(item: Omit<MenuItem, 'id' | 'createdAt' | 'upd
   try {
     const [newItemFromDb] = await db.insert(menuItemsTable).values({
         name: item.name,
-        price: String(item.price), // Drizzle espera string para o tipo decimal
+        price: String(item.price), 
         category: item.category,
         description: item.description || null,
         imageUrl: item.imageUrl || null,
         isPromotion: item.isPromotion || false,
         dataAiHint: item.dataAiHint || null,
-        // id, createdAt, updatedAt são gerados pelo DB/Drizzle schema
     }).returning();
     
     if (!newItemFromDb) {
@@ -69,6 +67,8 @@ export async function addMenuItem(item: Omit<MenuItem, 'id' | 'createdAt' | 'upd
     return {
         ...newItemFromDb,
         price: parseFloat(newItemFromDb.price as string),
+        createdAt: newItemFromDb.createdAt.toISOString(),
+        updatedAt: newItemFromDb.updatedAt.toISOString(),
     };
   } catch (error) {
     console.error("actions.ts: Error adding menu item to DB with Drizzle:", error);
@@ -82,13 +82,13 @@ export async function updateMenuItem(updatedItem: MenuItem): Promise<MenuItem | 
     const [itemFromDb] = await db.update(menuItemsTable)
         .set({
             name: updatedItem.name,
-            price: String(updatedItem.price), // Drizzle espera string
+            price: String(updatedItem.price), 
             category: updatedItem.category,
             description: updatedItem.description || null,
             imageUrl: updatedItem.imageUrl || null,
             isPromotion: updatedItem.isPromotion || false,
             dataAiHint: updatedItem.dataAiHint || null,
-            updatedAt: new Date(), // Drizzle $onUpdate deve lidar com isso, mas explícito também funciona
+            updatedAt: new Date(), 
         })
         .where(eq(menuItemsTable.id, updatedItem.id))
         .returning();
@@ -101,24 +101,23 @@ export async function updateMenuItem(updatedItem: MenuItem): Promise<MenuItem | 
     return {
         ...itemFromDb,
         price: parseFloat(itemFromDb.price as string),
+        createdAt: itemFromDb.createdAt.toISOString(),
+        updatedAt: itemFromDb.updatedAt.toISOString(),
     };
   } catch (error) {
     console.error("actions.ts: Error updating menu item in DB with Drizzle:", error);
-    throw error; // Lançar o erro para o chamador tratar
+    throw error; 
   }
 }
 
 export async function deleteMenuItem(itemId: string): Promise<boolean> {
   console.log("actions.ts: Attempting to delete menu item with Drizzle:", itemId);
   try {
-    // Verificar se o item está em algum pedido
     const result = await db.select({ count: dslCount() }).from(orderItemsTable).where(eq(orderItemsTable.menuItemId, itemId));
     const orderItemsCount = result[0]?.count || 0;
 
     if (orderItemsCount > 0) {
         console.warn(`actions.ts: Attempt to delete MenuItem ${itemId} which is in ${orderItemsCount} orders. Deletion blocked.`);
-        // Considerar lançar um erro específico ou retornar um objeto com mensagem
-        // throw new Error(`Cannot delete menu item: It is associated with ${orderItemsCount} order(s).`);
         return false; 
     }
 
@@ -132,25 +131,85 @@ export async function deleteMenuItem(itemId: string): Promise<boolean> {
     }
   } catch (error) {
     console.error("actions.ts: Error deleting menu item from DB with Drizzle:", error);
-    // throw error; // Lançar o erro se preferir que o chamador trate
     return false;
   }
 }
 
 // --- Funções de Pedidos ---
-// TODO: Refatorar todas as funções abaixo para usar Drizzle ORM.
+
+// Helper function to map raw Drizzle order object to our Order type
+const mapDbOrderToOrderType = (dbOrder: any): Order => {
+  const items = (dbOrder.items || []).map((item: any) => ({
+    ...item,
+    price: parseFloat(item.price as string),
+  }));
+
+  let couponData: Coupon | null = null;
+  if (dbOrder.coupon) {
+    couponData = {
+      ...dbOrder.coupon,
+      discountValue: parseFloat(dbOrder.coupon.discountValue as string),
+      minOrderAmount: dbOrder.coupon.minOrderAmount ? parseFloat(dbOrder.coupon.minOrderAmount as string) : undefined,
+      createdAt: dbOrder.coupon.createdAt.toISOString(),
+      updatedAt: dbOrder.coupon.updatedAt.toISOString(),
+      expiresAt: dbOrder.coupon.expiresAt ? dbOrder.coupon.expiresAt.toISOString() : undefined,
+    };
+  }
+  
+  return {
+    ...dbOrder,
+    items,
+    coupon: couponData,
+    totalAmount: parseFloat(dbOrder.totalAmount as string),
+    appliedCouponDiscount: dbOrder.appliedCouponDiscount ? parseFloat(dbOrder.appliedCouponDiscount as string) : null,
+    createdAt: dbOrder.createdAt.toISOString(),
+    updatedAt: dbOrder.updatedAt ? dbOrder.updatedAt.toISOString() : undefined,
+    deliveredAt: dbOrder.deliveredAt ? dbOrder.deliveredAt.toISOString() : undefined,
+  };
+};
+
 
 export async function getOrders(): Promise<Order[]> {
-  console.warn("actions.ts: getOrders function needs to be refactored for Drizzle.");
-  // Simulação de retorno para evitar quebras totais enquanto refatora.
-  // Em um app real, você lançaria um erro ou implementaria.
-  return Promise.resolve([]); // Placeholder
+  console.log("actions.ts: Fetching all orders with Drizzle...");
+  try {
+    const ordersFromDb = await db.query.orders.findMany({
+      with: {
+        items: true,
+        coupon: true,
+      },
+      orderBy: [desc(ordersTable.createdAt)],
+    });
+    console.log(`actions.ts: Found ${ordersFromDb.length} orders.`);
+    return ordersFromDb.map(mapDbOrderToOrderType);
+  } catch (error) {
+    console.error("actions.ts: Error fetching orders from DB with Drizzle:", error);
+    throw error;
+  }
 }
 
 export async function getOrderById(orderId: string): Promise<Order | null> {
-  console.warn("actions.ts: getOrderById function needs to be refactored for Drizzle.");
-  return Promise.resolve(null); // Placeholder
+  console.log(`actions.ts: Fetching order by ID ${orderId} with Drizzle...`);
+  try {
+    const orderFromDb = await db.query.orders.findFirst({
+      where: eq(ordersTable.id, orderId),
+      with: {
+        items: true,
+        coupon: true,
+      },
+    });
+
+    if (!orderFromDb) {
+      console.warn(`actions.ts: Order ${orderId} not found.`);
+      return null;
+    }
+    console.log(`actions.ts: Order ${orderId} found.`);
+    return mapDbOrderToOrderType(orderFromDb);
+  } catch (error) {
+    console.error(`actions.ts: Error fetching order ${orderId} from DB with Drizzle:`, error);
+    throw error;
+  }
 }
+
 
 export async function updateOrderStatus(orderId: string, status: OrderStatus): Promise<Order | null> {
   console.warn("actions.ts: updateOrderStatus function needs to be refactored for Drizzle.");
@@ -187,7 +246,6 @@ export async function simulateNewOrder(): Promise<Order> {
 }
 
 // --- Funções de IA ---
-// Estas funções não interagem diretamente com o banco de dados, então devem continuar funcionando.
 export async function optimizeRouteAction(pizzeriaAddress: string, customerAddress: string): Promise<OptimizeDeliveryRouteOutput> {
     const input: OptimizeDeliveryRouteInput = { pizzeriaAddress, customerAddress };
     return aiOptimizeDeliveryRoute(input);
@@ -219,16 +277,14 @@ export async function exportOrdersToCSV(): Promise<string> {
   return Promise.resolve("Nenhum pedido para exportar (função não implementada para Drizzle).");
 }
 
-// fetchAddressFromCep não interage com o banco, então deve continuar funcionando.
 export async function fetchAddressFromCep(cep: string): Promise<CepAddress | null> {
-  await new Promise(resolve => setTimeout(resolve, 600)); // Simular delay da API
+  await new Promise(resolve => setTimeout(resolve, 600)); 
   const cleanedCep = cep.replace(/\D/g, '');
   if (cleanedCep.length !== 8) {
     console.error("actions.ts: CEP inválido fornecido para fetchAddressFromCep:", cep);
     return null;
   }
   console.log(`actions.ts: Simulando busca por CEP: ${cleanedCep}`);
-  // Adicionar mais CEPs mockados conforme necessário para testes
   if (cleanedCep === "12402170") {
     return { street: "Rua Doutor José Ortiz Monteiro Patto", neighborhood: "Campo Alegre", city: "Pindamonhangaba", state: "SP", fullAddress: "Rua Doutor José Ortiz Monteiro Patto, Campo Alegre, Pindamonhangaba - SP"};
   } else if (cleanedCep === "12345678") {
@@ -251,4 +307,6 @@ export async function createCoupon(data: Omit<Coupon, 'id' | 'createdAt' | 'upda
     // @ts-ignore // Temporário
     return Promise.reject(new Error("createCoupon not implemented for Drizzle."));
 }
+    
+
     

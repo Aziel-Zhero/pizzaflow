@@ -9,7 +9,7 @@
       timestamp,
       integer,
       pgEnum,
-      sequence, // Garantir que 'sequence' está importado
+      // REMOVIDO: sequence, 
     } from 'drizzle-orm/pg-core';
     import crypto from 'crypto'; // For UUID generation
     
@@ -19,9 +19,9 @@
     export const paymentStatusEnum = pgEnum('payment_status', ["Pendente", "Pago"]);
     export const discountTypeEnum = pgEnum('discount_type', ["PERCENTAGE", "FIXED_AMOUNT"]);
     
-    // Sequência para order display ID - Corrigido: sem pgSchema("public")
-    export const orderDisplayIdSequence = sequence("order_display_id_seq").increment(1).min(1).start(1);
-    
+    // REMOVIDO: A linha export const orderDisplayIdSequence = sequence(...);
+    // A sequência order_display_id_seq será criada pela migração Drizzle.
+    // A lógica para obter o nextval em actions.ts já usa sql`SELECT nextval('order_display_id_seq')`.
     
     // Tables
     export const menuItems = pgTable('menu_items', {
@@ -143,7 +143,7 @@
       orderItems,
       coupons,
       deliveryPersons, 
-      orderDisplayIdSequence, // Adicionada a sequência
+      // REMOVIDO: orderDisplayIdSequence, 
       // Enums
       orderStatusEnum,
       paymentTypeEnum,

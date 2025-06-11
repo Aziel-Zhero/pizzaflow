@@ -7,10 +7,10 @@ import {
     orders as ordersTable, 
     orderItems as orderItemsTable, 
     coupons as couponsTable,
-    deliveryPersons as deliveryPersonsTable, 
-    orderDisplayIdSequence 
+    deliveryPersons as deliveryPersonsTable 
+    // REMOVIDO: orderDisplayIdSequence - não mais exportado do schema.ts
 } from '@/lib/schema';
-import { eq, and, desc, sql, gte, lte, or, isNull, count as dslCount, sum as dslSum, avg as dslAvg, like, asc, inArray, gt, SQL, not } from 'drizzle-orm';
+import { eq, and, desc, sql, gte, lte, or, isNull, isNotNull, count as dslCount, sum as dslSum, avg as dslAvg, like, asc, inArray, gt, SQL, not } from 'drizzle-orm';
 import type {
     Order,
     MenuItem,
@@ -26,16 +26,14 @@ import type {
     CepAddress,
     OptimizeMultiDeliveryRouteInput,
     OptimizeMultiDeliveryRouteOutput,
-    // OptimizeDeliveryRouteInput, // Não mais usado diretamente aqui
     OptimizeDeliveryRouteOutput,
-    // TimeEstimateData, // Removido por enquanto, será recalculado no dashboard
     CouponUsageData,
     Coupon,
-    DiscountType,
+    // DiscountType, // Não é usado diretamente aqui, mas é parte de Coupon
     DeliveryPerson
 } from '@/lib/types';
 import { optimizeMultiDeliveryRoute as aiOptimizeMultiDeliveryRoute } from '@/ai/flows/optimize-delivery-route';
-import { format, subDays, parseISO, differenceInMinutes, startOfDay, endOfDay, isFuture, startOfMonth, endOfMonth, startOfYear, endOfYear, getDay } from 'date-fns';
+import { format, subDays, parseISO, differenceInMinutes, startOfDay, endOfDay, isFuture, getDay } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import crypto from 'crypto';
 
@@ -71,8 +69,8 @@ export async function addMenuItem(item: Omit<MenuItem, 'id' | 'createdAt' | 'upd
         imageUrl: item.imageUrl || null,
         isPromotion: item.isPromotion || false,
         dataAiHint: item.dataAiHint || null,
-        createdAt: new Date(), // Explicitamente definido
-        updatedAt: new Date(), // Explicitamente definido
+        createdAt: new Date(),
+        updatedAt: new Date(),
     }).returning();
     
     if (!newItemFromDb) {
@@ -134,7 +132,6 @@ export async function deleteMenuItem(itemId: string): Promise<boolean> {
 
     if (orderItemsCount > 0) {
         console.warn(`actions.ts: Attempt to delete MenuItem ${itemId} which is in ${orderItemsCount} orders. Deletion blocked due to 'restrict' onDelete policy.`);
-        // Aqui você poderia lançar um erro mais específico ou retornar um objeto com uma mensagem de erro
         throw new Error(`Item ${itemId} não pode ser excluído pois está associado a ${orderItemsCount} pedido(s).`);
     }
 
@@ -148,7 +145,6 @@ export async function deleteMenuItem(itemId: string): Promise<boolean> {
     }
   } catch (error) {
     console.error("actions.ts: Error deleting menu item from DB with Drizzle:", error);
-    // Propague o erro para que a UI possa tratá-lo se necessário
     if (error instanceof Error) throw error; 
     throw new Error("Unknown error deleting menu item.");
   }
@@ -209,7 +205,7 @@ export async function getOrders(): Promise<Order[]> {
 }
 
 export async function getOrderById(orderId: string): Promise<Order | null> {
-  console.log(`actions.ts: Fetching order by ID ${orderId} with Drizzle...`);
+  console.log(`actions.ts: Fetching order by ID or DisplayID ${orderId} with Drizzle...`);
   try {
     let orderFromDb = await db.query.orders.findFirst({
       where: or(
@@ -347,21 +343,15 @@ export async function updateOrderDetails(
       updatedAt: new Date(), 
     };
 
-    // Customer info
     if (fullUpdatedOrderDataFromClient.customerName !== undefined) updatePayload.customerName = fullUpdatedOrderDataFromClient.customerName;
     if (fullUpdatedOrderDataFromClient.customerAddress !== undefined) updatePayload.customerAddress = fullUpdatedOrderDataFromClient.customerAddress;
     if (fullUpdatedOrderDataFromClient.customerCep !== undefined) updatePayload.customerCep = fullUpdatedOrderDataFromClient.customerCep;
     if (fullUpdatedOrderDataFromClient.customerReferencePoint !== undefined) updatePayload.customerReferencePoint = fullUpdatedOrderDataFromClient.customerReferencePoint;
-    
-    // Payment info
     if (fullUpdatedOrderDataFromClient.paymentType !== undefined) updatePayload.paymentType = fullUpdatedOrderDataFromClient.paymentType;
     if (fullUpdatedOrderDataFromClient.paymentStatus !== undefined) updatePayload.paymentStatus = fullUpdatedOrderDataFromClient.paymentStatus;
-    
-    // Notes and NFe
     if (fullUpdatedOrderDataFromClient.notes !== undefined) updatePayload.notes = fullUpdatedOrderDataFromClient.notes;
     if (fullUpdatedOrderDataFromClient.nfeLink !== undefined) updatePayload.nfeLink = fullUpdatedOrderDataFromClient.nfeLink;
     
-    // Status and DeliveredAt
     if (fullUpdatedOrderDataFromClient.status !== undefined) {
       updatePayload.status = fullUpdatedOrderDataFromClient.status;
       if (fullUpdatedOrderDataFromClient.status === 'Entregue') {
@@ -369,27 +359,23 @@ export async function updateOrderDetails(
             where: eq(ordersTable.id, orderId),
             columns: { deliveredAt: true }
         });
-        // Only set deliveredAt if it's not already set, or if explicitly provided by client (though UI doesn't allow editing this)
         if (currentOrderState && !currentOrderState.deliveredAt) { 
             updatePayload.deliveredAt = new Date();
         } else if (currentOrderState && currentOrderState.deliveredAt && fullUpdatedOrderDataFromClient.deliveredAt) {
-             // This case is unlikely with current UI but kept for robustness
              updatePayload.deliveredAt = parseISO(fullUpdatedOrderDataFromClient.deliveredAt);
         } else if (!currentOrderState?.deliveredAt && fullUpdatedOrderDataFromClient.status === 'Entregue') { 
-            // If status is set to Entregue and deliveredAt is null, set it now.
             updatePayload.deliveredAt = new Date();
         }
       }
     }
 
-    // Delivery Info (manual updates, not typically via this function but possible)
     if (fullUpdatedOrderDataFromClient.deliveryPerson !== undefined) updatePayload.deliveryPerson = fullUpdatedOrderDataFromClient.deliveryPerson;
     if (fullUpdatedOrderDataFromClient.deliveryPersonId !== undefined) updatePayload.deliveryPersonId = fullUpdatedOrderDataFromClient.deliveryPersonId;
     if (fullUpdatedOrderDataFromClient.optimizedRoute !== undefined) updatePayload.optimizedRoute = fullUpdatedOrderDataFromClient.optimizedRoute;
 
     console.log("actions.ts: Update payload being sent to DB:", JSON.stringify(updatePayload, null, 2));
 
-    if (Object.keys(updatePayload).length === 1 && 'updatedAt' in updatePayload) { // Only updatedAt changed
+    if (Object.keys(updatePayload).length === 1 && 'updatedAt' in updatePayload) {
         console.log(`actions.ts: No actual changes detected for order ${orderId} other than updatedAt. Skipping DB update, fetching current.`);
         return getOrderById(orderId);
     }
@@ -471,14 +457,15 @@ export async function addNewOrder(newOrderData: NewOrderClientData): Promise<Ord
 
     let formattedDisplayId = `P_ERR`;
     try {
-        console.log("actions.ts: addNewOrder - Fetching nextval for displayId. Sequence name from schema:", orderDisplayIdSequence.name);
-        const { rows: [{ nextval: displayIdVal }] } = await tx.execute(sql`SELECT nextval(${sql.raw(orderDisplayIdSequence.name)}) as nextval;`);
+        const sequenceName = 'order_display_id_seq'; // Usar o nome da sequência diretamente como string
+        console.log("actions.ts: addNewOrder - Fetching nextval for displayId. Sequence name:", sequenceName);
+        const { rows: [{ nextval: displayIdVal }] } = await tx.execute(sql`SELECT nextval(${sql.raw(sequenceName)}) as nextval;`);
         formattedDisplayId = `P${String(displayIdVal).padStart(4, '0')}`;
         console.log("actions.ts: addNewOrder - Generated displayId:", formattedDisplayId);
     } catch (seqError) {
-        console.error("actions.ts: addNewOrder - CRITICAL ERROR fetching nextval for displayId sequence. Sequence name used:", orderDisplayIdSequence.name, "Error:", seqError);
-        // Não lançar erro aqui ainda, para tentar salvar o pedido com um displayId de fallback.
-        // Ou, se displayId for obrigatório e único, lançar o erro:
+        console.error("actions.ts: addNewOrder - CRITICAL ERROR fetching nextval for displayId sequence. Error:", seqError);
+        // Considerar se deve lançar o erro aqui ou permitir que o pedido seja salvo com displayId de fallback.
+        // Se displayId for UNIQUE e NOT NULL no banco, esta falha será crítica.
         // throw new Error("Failed to generate display ID for order: " + (seqError as Error).message);
     }
     
@@ -554,7 +541,6 @@ export async function addNewOrder(newOrderData: NewOrderClientData): Promise<Ord
     return mapDbOrderToOrderType(fullOrder); 
   }).catch(error => {
     console.error("actions.ts: CRITICAL ERROR in addNewOrder transaction with Drizzle:", error);
-    // Lançar o erro para que a UI possa tratá-lo adequadamente
     if (error instanceof Error) throw error;
     throw new Error("Unknown error during order creation.");
   });
@@ -629,9 +615,23 @@ export async function optimizeRouteAction(pizzeriaAddress: string, customerAddre
 
 export async function optimizeMultiRouteAction(input: OptimizeMultiDeliveryRouteInput): Promise<OptimizeMultiDeliveryRouteOutput> {
     console.log("actions.ts: Calling AI for multi-route optimization. Input:", JSON.stringify(input, null, 2));
-    const result = await aiOptimizeMultiDeliveryRoute(input);
-    console.log("actions.ts: AI multi-route optimization result:", JSON.stringify(result, null, 2));
-    return result;
+    try {
+      const result = await aiOptimizeMultiDeliveryRoute(input);
+      console.log("actions.ts: AI multi-route optimization result:", JSON.stringify(result, null, 2));
+      return result;
+    } catch (aiError) {
+        console.error("actions.ts: CRITICAL ERROR during AI multi-route optimization call:", aiError);
+        // Fallback: gerar rotas individuais se a IA falhar completamente
+        const fallbackPlan: OptimizeMultiDeliveryRouteOutput['optimizedRoutePlan'] = input.ordersToDeliver.map(order => ({
+            orderIds: [order.orderId],
+            description: `Rota individual para pedido ${order.orderId} (fallback de erro AI)`,
+            googleMapsUrl: `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(input.pizzeriaAddress)}&destination=${encodeURIComponent(order.customerAddress)}&travelmode=driving`
+        }));
+        return { 
+            optimizedRoutePlan: fallbackPlan, 
+            summary: "Otimização da IA falhou criticamente. Rotas individuais foram geradas."
+        };
+    }
 }
 
 
@@ -648,12 +648,11 @@ export async function getDashboardAnalytics(
   const paidFilter = eq(ordersTable.paymentStatus, 'Pago');
   const notCancelledFilter = not(eq(ordersTable.status, 'Cancelado')); 
 
-  let whereConditions = and(notCancelledFilter);
+  let whereConditions: SQL | undefined = notCancelledFilter;
   if (dateFilter) {
       whereConditions = and(notCancelledFilter, dateFilter);
   }
   
-  // 1. Total de Pedidos (não cancelados, dentro do período)
   const totalOrdersResult = await db.select({ value: dslCount(ordersTable.id) })
     .from(ordersTable)
     .where(whereConditions);
@@ -661,8 +660,7 @@ export async function getDashboardAnalytics(
   console.log("actions.ts: Dashboard - totalOrders:", totalOrders);
 
 
-  // 2. Receita Total (pedidos pagos e não cancelados, dentro do período)
-  let revenueWhereConditions = and(notCancelledFilter, paidFilter);
+  let revenueWhereConditions: SQL | undefined = and(notCancelledFilter, paidFilter);
   if (dateFilter) {
     revenueWhereConditions = and(notCancelledFilter, paidFilter, dateFilter);
   }
@@ -672,7 +670,6 @@ export async function getDashboardAnalytics(
   const totalRevenue = totalRevenueResult[0]?.value || 0;
   console.log("actions.ts: Dashboard - totalRevenue:", totalRevenue);
   
-  // 3. Ticket Médio (pedidos pagos e não cancelados, dentro do período)
   const paidOrdersCountResult = await db.select({ value: dslCount(ordersTable.id) })
     .from(ordersTable)
     .where(revenueWhereConditions);
@@ -681,7 +678,6 @@ export async function getDashboardAnalytics(
   console.log("actions.ts: Dashboard - averageOrderValue:", averageOrderValue, "(Paid orders count:", paidOrdersCount, ")");
 
 
-  // 4. Pedidos por Status (não cancelados, dentro do período)
   const ordersByStatusResult = await db.select({ status: ordersTable.status, count: dslCount(ordersTable.id) })
     .from(ordersTable)
     .where(whereConditions) 
@@ -700,8 +696,6 @@ export async function getDashboardAnalytics(
   console.log("actions.ts: Dashboard - ordersByStatus:", JSON.stringify(ordersByStatus, null, 2));
 
 
-  // 5. Receita Diária (últimos 7 dias, pedidos pagos e não cancelados)
-  // Nota: Este cálculo ignora o filtro de 'period' e sempre pega os últimos 7 dias.
   const dailyRevenue: DailyRevenue[] = [];
   for (let i = 6; i >= 0; i--) {
     const day = subDays(new Date(), i);
@@ -724,22 +718,19 @@ export async function getDashboardAnalytics(
   }
   console.log("actions.ts: Dashboard - dailyRevenue (last 7 days):", JSON.stringify(dailyRevenue, null, 2));
 
-  // 6. Tempo Médio de Entrega (para pedidos Entregues no período, ou todos se sem período)
   let averageTimeToDeliveryMinutes: number | undefined = undefined;
-  let deliveredWhereConditions = eq(ordersTable.status, 'Entregue');
+  let deliveredWhereConditions: SQL | undefined = and(eq(ordersTable.status, 'Entregue'), isNotNull(ordersTable.deliveredAt), isNotNull(ordersTable.createdAt));
   if (dateFilter) {
-    deliveredWhereConditions = and(eq(ordersTable.status, 'Entregue'), dateFilter);
+    deliveredWhereConditions = and(eq(ordersTable.status, 'Entregue'), dateFilter, isNotNull(ordersTable.deliveredAt), isNotNull(ordersTable.createdAt));
   }
 
   const deliveredOrdersForTimeAvg = await db.select({ createdAt: ordersTable.createdAt, deliveredAt: ordersTable.deliveredAt })
     .from(ordersTable)
-    .where(and(
-      deliveredWhereConditions,
-      isNotNull(ordersTable.deliveredAt)
-    ));
+    .where(deliveredWhereConditions);
   
   if (deliveredOrdersForTimeAvg.length > 0) {
     const totalDeliveryMinutes = deliveredOrdersForTimeAvg.reduce((sum, o) => {
+      if (!o.createdAt || !o.deliveredAt) return sum; // Skip if dates are missing
       const createdAtDate = o.createdAt instanceof Date ? o.createdAt : parseISO(o.createdAt as unknown as string);
       const deliveredAtDate = o.deliveredAt instanceof Date ? o.deliveredAt : parseISO(o.deliveredAt as unknown as string);
       return sum + differenceInMinutes(deliveredAtDate, createdAtDate);
@@ -748,8 +739,7 @@ export async function getDashboardAnalytics(
   }
   console.log("actions.ts: Dashboard - averageTimeToDeliveryMinutes:", averageTimeToDeliveryMinutes, "(Delivered orders for avg:", deliveredOrdersForTimeAvg.length, ")");
 
-  // 7. Uso de Cupons (pedidos não cancelados, dentro do período)
-  let couponUsageWhereConditions = and(isNotNull(ordersTable.couponId), notCancelledFilter);
+  let couponUsageWhereConditions: SQL | undefined = and(isNotNull(ordersTable.couponId), notCancelledFilter);
   if(dateFilter) {
     couponUsageWhereConditions = and(isNotNull(ordersTable.couponId), notCancelledFilter, dateFilter);
   }
@@ -846,7 +836,7 @@ export async function fetchAddressFromCep(cep: string): Promise<CepAddress | nul
         console.error(`actions.ts: BrasilAPI retornou erro ${response.status}. Body: ${errorBody}`);
         throw new Error(`BrasilAPI retornou erro ${response.status}`);
     }
-    const data: CepAddress = await response.json();
+    const data = await response.json() as CepAddress; // Cast para o tipo CepAddress
     console.log(`actions.ts: CEP ${cleanedCep} encontrado. Dados:`, data);
     
     const fullAddress = `${data.street || ''}${data.street && data.neighborhood ? ', ' : ''}${data.neighborhood || ''}${ (data.street || data.neighborhood) && data.city ? ', ' : ''}${data.city || ''}${data.city && data.state ? ' - ' : ''}${data.state || ''}`.trim();
@@ -906,7 +896,7 @@ export async function createCoupon(data: Omit<Coupon, 'id' | 'createdAt' | 'upda
             expiresAt: data.expiresAt ? parseISO(data.expiresAt) : null, 
             usageLimit: data.usageLimit,
             minOrderAmount: data.minOrderAmount ? String(data.minOrderAmount) : null,
-            timesUsed: 0, // Explicitly set for new coupon
+            timesUsed: 0,
             createdAt: new Date(),
             updatedAt: new Date(),
         };
@@ -1036,7 +1026,6 @@ export async function updateDeliveryPerson(id: string, data: Partial<Omit<Delive
 export async function deleteDeliveryPerson(id: string): Promise<boolean> {
   console.log("actions.ts: Deleting delivery person. ID:", id);
   try {
-    // Verificar se o entregador está associado a algum pedido não entregue/cancelado
     const assignedOrders = await db.select({ orderId: ordersTable.id })
         .from(ordersTable)
         .where(and(
@@ -1060,3 +1049,6 @@ export async function deleteDeliveryPerson(id: string): Promise<boolean> {
     throw new Error("Unknown error deleting delivery person.");
   }
 }
+
+
+    

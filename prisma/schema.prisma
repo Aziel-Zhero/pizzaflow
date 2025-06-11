@@ -1,90 +1,88 @@
 
-generator client {
-  provider = "prisma-client-js"
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL") // For Prisma Migrate
 }
 
-datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"] // For Prisma Accelerate
 }
 
 model MenuItem {
-  id            String    @id @default(cuid())
-  name          String
-  price         Decimal   @db.Decimal(10, 2)
-  category      String
-  description   String?
-  imageUrl      String?
-  dataAiHint    String?
-  isPromotion   Boolean   @default(false)
-  orderItems    OrderItem[]
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id          String  @id @default(cuid())
+  name        String
+  price       Decimal @db.Decimal(10, 2)
+  category    String
+  description String?
+  imageUrl    String?
+  isPromotion Boolean @default(false)
+  dataAiHint  String? // For placeholder image generation hints
+
+  orderItems OrderItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Order {
-  id                      String      @id @default(cuid())
+  id                      String        @id @default(cuid())
   customerName            String
   customerAddress         String
   customerCep             String?
   customerReferencePoint  String?
   items                   OrderItem[]
-  totalAmount             Decimal     @db.Decimal(10, 2)
-  status                  OrderStatus @default(Pendente)
-  createdAt               DateTime    @default(now())
-  updatedAt               DateTime?   @updatedAt
-  deliveredAt             DateTime?
-  estimatedDeliveryTime   DateTime?
-  deliveryPerson          String?
+  totalAmount             Decimal       @db.Decimal(10, 2)
+  status                  OrderStatus   @default(Pendente)
   paymentType             PaymentType?
   paymentStatus           PaymentStatus @default(Pendente)
   notes                   String?
   optimizedRoute          String?
+  deliveryPerson          String?
+  nfeLink                 String? // Novo campo para link da NFe
 
-  appliedCouponCode       String?
-  appliedCouponDiscount   Decimal?    @db.Decimal(10, 2)
-  couponId                String?
-  coupon                  Coupon?     @relation(fields: [couponId], references: [id])
+  appliedCouponCode     String?
+  appliedCouponDiscount Decimal? @db.Decimal(10, 2)
+  couponId              String?
+  coupon                Coupon?  @relation(fields: [couponId], references: [id])
 
-  @@index([createdAt])
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deliveredAt DateTime?
 }
 
 model OrderItem {
-  id          String    @id @default(cuid())
-  quantity    Int
-  price       Decimal   @db.Decimal(10, 2) // Price at the time of order
-  itemNotes   String?
+  id         String   @id @default(cuid())
+  orderId    String
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItemId String
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id]) // Relação com MenuItem
+  name       String   // Denormalized name from MenuItem at time of order
+  quantity   Int
+  price      Decimal  @db.Decimal(10, 2) // Price per item at time of order
+  itemNotes  String?
 
-  orderId     String
-  order       Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
-
-  menuItemId  String
-  menuItem    MenuItem  @relation(fields: [menuItemId], references: [id])
-  name        String    // Denormalized name from MenuItem for history
-
-  @@index([orderId])
-  @@index([menuItemId])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Coupon {
-  id                  String    @id @default(cuid())
-  code                String    @unique
-  description         String?
-  discountType        DiscountType @default(PERCENTAGE)
-  discountValue       Decimal   @db.Decimal(10, 2)
-  isActive            Boolean   @default(true)
-  expiresAt           DateTime?
-  usageLimit          Int?      // Max number of times this coupon can be used overall
-  timesUsed           Int       @default(0)
-  minOrderAmount      Decimal?  @db.Decimal(10, 2) // Minimum order amount for coupon to be valid
-  
-  orders              Order[]   // Orders that used this coupon
+  id             String       @id @default(cuid())
+  code           String       @unique
+  description    String?
+  discountType   DiscountType
+  discountValue  Decimal      @db.Decimal(10, 2)
+  isActive       Boolean      @default(true)
+  expiresAt      DateTime?
+  usageLimit     Int?
+  timesUsed      Int          @default(0)
+  minOrderAmount Decimal?     @db.Decimal(10, 2)
 
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
+  orders Order[]
 
-  @@index([code])
-  @@index([isActive, expiresAt])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 enum OrderStatus {

@@ -20,7 +20,7 @@ import { Badge } from '@/components/ui/badge';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { MessageSquare, Ticket } from 'lucide-react';
+import { FileText, Ticket } from 'lucide-react'; // Changed MessageSquare to FileText for NFe
 
 interface OrderDetailsModalProps {
   order: Order | null;
@@ -40,13 +40,17 @@ const OrderDetailsModal: FC<OrderDetailsModalProps> = ({ order, isOpen, onClose,
      onUpdateOrder({ ...order, notes: e.target.value });
   };
 
+  const handleNfeLinkChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    onUpdateOrder({ ...order, nfeLink: e.target.value });
+  };
+
 
   const confirmPaymentAndClose = () => {
     if (order.paymentType) {
       onUpdateOrder({ ...order, paymentStatus: "Pago" });
     }
-    onClose();
-  }
+    // onClose(); // Fechar o modal é responsabilidade do componente pai após a atualização ser processada
+  };
 
 
   return (
@@ -55,28 +59,28 @@ const OrderDetailsModal: FC<OrderDetailsModalProps> = ({ order, isOpen, onClose,
         <DialogHeader>
           <DialogTitle className="font-headline">Detalhes do Pedido: {order.id}</DialogTitle>
           <DialogDescription>
-            Gerencie detalhes e pagamento para este pedido.
+            Gerencie detalhes, pagamento e NFe para este pedido.
           </DialogDescription>
         </DialogHeader>
         <ScrollArea className="max-h-[60vh] p-1">
         <div className="grid gap-4 py-4 pr-4">
           <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="customerName" className="text-right">Cliente</Label>
-            <Input id="customerName" value={order.customerName} readOnly className="col-span-3" />
+            <Label htmlFor="customerNameModal" className="text-right">Cliente</Label>
+            <Input id="customerNameModal" value={order.customerName} readOnly className="col-span-3" />
           </div>
           <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="customerAddress" className="text-right">Endereço</Label>
-            <Input id="customerAddress" value={order.customerAddress} readOnly className="col-span-3" />
+            <Label htmlFor="customerAddressModal" className="text-right">Endereço</Label>
+            <Input id="customerAddressModal" value={order.customerAddress} readOnly className="col-span-3" />
           </div>
           {order.customerReferencePoint && (
              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="customerReferencePoint" className="text-right">Referência</Label>
-                <Input id="customerReferencePoint" value={order.customerReferencePoint} readOnly className="col-span-3" />
+                <Label htmlFor="customerReferencePointModal" className="text-right">Referência</Label>
+                <Input id="customerReferencePointModal" value={order.customerReferencePoint} readOnly className="col-span-3" />
             </div>
           )}
           <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="createdAt" className="text-right">Hora do Pedido</Label>
-            <Input id="createdAt" value={format(parseISO(order.createdAt), 'PPP p', { locale: ptBR })} readOnly className="col-span-3" />
+            <Label htmlFor="createdAtModal" className="text-right">Hora do Pedido</Label>
+            <Input id="createdAtModal" value={format(parseISO(order.createdAt), 'PPP p', { locale: ptBR })} readOnly className="col-span-3" />
           </div>
           <div className="grid grid-cols-4 items-start gap-4">
             <Label className="text-right pt-1">Itens</Label>
@@ -112,38 +116,52 @@ const OrderDetailsModal: FC<OrderDetailsModalProps> = ({ order, isOpen, onClose,
             </div>
           </div>
           <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="status" className="text-right">Status</Label>
-            <Badge className="col-span-3 w-fit">{order.status}</Badge>
+            <Label htmlFor="statusModal" className="text-right">Status</Label>
+            <Badge id="statusModal" className="col-span-3 w-fit">{order.status}</Badge>
           </div>
           {order.deliveryPerson && (
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="deliveryPerson" className="text-right">Entregador(a)</Label>
-              <Input id="deliveryPerson" value={order.deliveryPerson} readOnly className="col-span-3" />
+              <Label htmlFor="deliveryPersonModal" className="text-right">Entregador(a)</Label>
+              <Input id="deliveryPersonModal" value={order.deliveryPerson} readOnly className="col-span-3" />
             </div>
           )}
           
           <div className="grid grid-cols-4 items-start gap-4">
-            <Label htmlFor="generalNotes" className="text-right pt-1">Observações Gerais</Label>
+            <Label htmlFor="generalNotesModal" className="text-right pt-1">Observações Gerais</Label>
             <Textarea 
-              id="generalNotes" 
+              id="generalNotesModal" 
               value={order.notes || ''} 
               onChange={handleGeneralNotesChange}
               className="col-span-3" 
               placeholder="Adicione observações gerais para este pedido..."
               rows={2}
+              disabled={order.paymentStatus === "Pago" && order.status === "Entregue"}
             />
           </div>
+          
+          <div className="grid grid-cols-4 items-center gap-4">
+            <Label htmlFor="nfeLinkModal" className="text-right flex items-center gap-1"><FileText className="h-4 w-4"/>Link NFe</Label>
+            <Input 
+              id="nfeLinkModal" 
+              value={order.nfeLink || ''} 
+              onChange={handleNfeLinkChange}
+              className="col-span-3" 
+              placeholder="https://servidor.com/nfe/123.pdf"
+              disabled={order.paymentStatus === "Pago" && order.status === "Entregue"}
+            />
+          </div>
+
 
           {(order.status === 'Entregue' || order.paymentStatus === 'Pendente') && (
             <>
               <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="paymentType" className="text-right">Forma de Pagamento</Label>
+                <Label htmlFor="paymentTypeModal" className="text-right">Forma de Pagamento</Label>
                 <Select 
                   value={order.paymentType || ""} 
                   onValueChange={handlePaymentTypeChange}
                   disabled={order.paymentStatus === 'Pago'}
                 >
-                  <SelectTrigger className="col-span-3">
+                  <SelectTrigger id="paymentTypeModal" className="col-span-3">
                     <SelectValue placeholder="Selecione a forma de pagamento" />
                   </SelectTrigger>
                   <SelectContent>
@@ -154,8 +172,8 @@ const OrderDetailsModal: FC<OrderDetailsModalProps> = ({ order, isOpen, onClose,
                 </Select>
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="paymentStatus" className="text-right">Status Pagamento</Label>                 
-                <Badge className={`col-span-3 w-fit ${order.paymentStatus === 'Pago' ? 'bg-green-500 hover:bg-green-600' : 'bg-yellow-500 hover:bg-yellow-600'}`}>
+                <Label htmlFor="paymentStatusModal" className="text-right">Status Pagamento</Label>                 
+                <Badge id="paymentStatusModal" className={`col-span-3 w-fit ${order.paymentStatus === 'Pago' ? 'bg-green-500 hover:bg-green-600' : 'bg-yellow-500 hover:bg-yellow-600'}`}>
                   {order.paymentStatus}
                 </Badge>
               </div>
@@ -163,8 +181,8 @@ const OrderDetailsModal: FC<OrderDetailsModalProps> = ({ order, isOpen, onClose,
           )}
           {order.optimizedRoute && (
              <div className="grid grid-cols-1 gap-2">
-                <Label htmlFor="optimizedRoute" className="font-semibold">Rota Otimizada</Label>
-                <a href={order.optimizedRoute} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline break-all">
+                <Label htmlFor="optimizedRouteModal" className="font-semibold">Rota Otimizada</Label>
+                <a id="optimizedRouteModal" href={order.optimizedRoute} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline break-all">
                     {order.optimizedRoute}
                 </a>
               </div>
@@ -173,9 +191,10 @@ const OrderDetailsModal: FC<OrderDetailsModalProps> = ({ order, isOpen, onClose,
         </ScrollArea>
         <DialogFooter>
           {order.status === 'Entregue' && order.paymentStatus === 'Pendente' && order.paymentType && (
-             <Button onClick={confirmPaymentAndClose} className="bg-primary hover:bg-primary/90">Confirmar Pagamento e Fechar</Button>
+             <Button onClick={confirmPaymentAndClose} className="bg-primary hover:bg-primary/90">Confirmar Pagamento</Button>
           )}
-          <Button variant="outline" onClick={onClose}>
+          <Button onClick={() => onUpdateOrder(order)} variant="outline">Salvar Alterações</Button>
+          <Button variant="secondary" onClick={onClose}>
             Fechar
           </Button>
         </DialogFooter>
@@ -185,3 +204,4 @@ const OrderDetailsModal: FC<OrderDetailsModalProps> = ({ order, isOpen, onClose,
 };
 
 export default OrderDetailsModal;
+

@@ -1,17 +1,17 @@
 
 "use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react'; // Added useCallback
 import AppHeader from '@/components/pizzaflow/AppHeader';
 import OrderColumn from '@/components/pizzaflow/OrderColumn';
 import OrderDetailsModal from '@/components/pizzaflow/modals/OrderDetailsModal';
 import RouteOptimizationModal from '@/components/pizzaflow/modals/RouteOptimizationModal';
 import MultiRouteOptimizationModal from '@/components/pizzaflow/modals/MultiRouteOptimizationModal';
-import type { Order, OptimizeMultiDeliveryRouteInput, MultiStopOrderInfo, OptimizeMultiDeliveryRouteOutput } from '@/lib/types';
+import type { Order, OptimizeMultiDeliveryRouteOutput } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { getOrders, updateOrderStatus, assignDelivery, updateOrderDetails, simulateNewOrder, assignMultiDelivery } from './actions';
-import { Coffee, Loader2, PackageCheck, PackageOpen, Pizza, ShoppingCart, Truck, CheckCircle2, Route } from 'lucide-react';
+import { Coffee, Loader2, PackageCheck, PackageOpen, Pizza, ShoppingCart, Truck, CheckCircle2, Route, AlertTriangle } from 'lucide-react';
 import SplitText from '@/components/common/SplitText';
 import { parseISO } from 'date-fns';
 
@@ -20,40 +20,46 @@ const PIZZERIA_NAME = "Pizzaria Planeta";
 export default function PizzaFlowDashboard() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [errorLoading, setErrorLoading] = useState<string | null>(null);
   const [selectedOrderForDetails, setSelectedOrderForDetails] = useState<Order | null>(null);
   const [selectedOrderForRoute, setSelectedOrderForRoute] = useState<Order | null>(null);
   const [isMultiRouteModalOpen, setIsMultiRouteModalOpen] = useState(false);
   const { toast } = useToast();
 
-  const fetchOrders = async () => {
-    setIsLoading(true);
+  const fetchOrders = useCallback(async (showLoader = true) => {
+    if(showLoader) setIsLoading(true);
+    setErrorLoading(null);
     try {
       const fetchedOrders = await getOrders();
       setOrders(fetchedOrders);
     } catch (error) {
-      toast({ title: "Erro", description: "Falha ao buscar pedidos.", variant: "destructive" });
+      console.error("Falha ao buscar pedidos:", error);
+      toast({ title: "Erro de Rede", description: "Não foi possível buscar os pedidos. Verifique sua conexão ou a configuração do banco.", variant: "destructive" });
+      setErrorLoading("Falha ao carregar pedidos. Verifique o console para mais detalhes ou a conexão com o banco de dados.");
+      setOrders([]); // Limpa os pedidos em caso de erro para não mostrar dados antigos
     } finally {
-      setIsLoading(false);
+      if(showLoader) setIsLoading(false);
     }
-  };
+  }, [toast]); // toast é uma dependência estável
 
   useEffect(() => {
-    fetchOrders();
-    const intervalId = setInterval(fetchOrders, 30000); // Refresh every 30 seconds
+    fetchOrders(true); // Fetch inicial com loader
+    const intervalId = setInterval(() => fetchOrders(false), 30000); // Refresh a cada 30 segundos sem loader piscando
     return () => clearInterval(intervalId);
-  }, []);
+  }, [fetchOrders]);
   
   const handleSimulateNewOrder = async () => {
     try {
-      await simulateNewOrder();
-      toast({title: "Novo Pedido Recebido!", description: "Um novo pedido simulado foi adicionado."});
-      fetchOrders(); 
+      const newOrder = await simulateNewOrder();
+      toast({title: "Novo Pedido Recebido!", description: `Pedido simulado ${newOrder.id} adicionado.`});
+      await fetchOrders(false); // Atualiza a lista sem loader global
     } catch (error) {
-      toast({ title: "Erro", description: "Falha ao simular novo pedido.", variant: "destructive" });
+      console.error("Falha ao simular novo pedido:", error)
+      toast({ title: "Erro na Simulação", description: "Falha ao simular novo pedido. Verifique o console.", variant: "destructive" });
     }
   };
 
-  const updateOrderInState = (updatedOrder: Order | Order[] | null) => {
+  const updateOrderInState = useCallback((updatedOrder: Order | Order[] | null) => {
     if (!updatedOrder) return;
 
     setOrders(prevOrders => {
@@ -64,8 +70,7 @@ export default function PizzaFlowDashboard() {
                 if (index !== -1) {
                     newOrdersList[index] = uo;
                 } else {
-                    // Should not happen if only updating existing orders from multi-assign
-                    newOrdersList.push(uo);
+                    newOrdersList.push(uo); // Should not happen for multi-assign if orders exist
                 }
             });
         } else {
@@ -73,24 +78,26 @@ export default function PizzaFlowDashboard() {
             if (index !== -1) {
                 newOrdersList[index] = updatedOrder as Order;
             } else {
-                newOrdersList.unshift(updatedOrder as Order); // Add new order
+                newOrdersList.unshift(updatedOrder as Order); 
             }
         }
         return newOrdersList.sort((a,b) => parseISO(b.createdAt).getTime() - parseISO(a.createdAt).getTime());
     });
-  };
+  }, []);
 
 
   const handleTakeOrder = async (orderId: string) => {
-    const updatedOrder = await updateOrderStatus(orderId, 'Em Preparo');
+    const updatedOrder = await updateOrderStatus(orderId, 'EmPreparo'); // Prisma enum
     updateOrderInState(updatedOrder);
-    toast({ title: "Pedido Aceito", description: `Pedido ${orderId} está agora em preparo.` });
+    if(updatedOrder) toast({ title: "Pedido Aceito", description: `Pedido ${orderId} está agora em preparo.` });
+    else toast({ title: "Erro", description: `Falha ao aceitar pedido ${orderId}.`, variant: "destructive"});
   };
 
   const handleReadyForPickup = async (orderId: string) => {
-    const updatedOrder = await updateOrderStatus(orderId, 'Aguardando Retirada');
+    const updatedOrder = await updateOrderStatus(orderId, 'AguardandoRetirada'); // Prisma enum
     updateOrderInState(updatedOrder);
-    toast({ title: "Pedido Pronto", description: `Pedido ${orderId} está pronto para retirada/entrega.` });
+     if(updatedOrder) toast({ title: "Pedido Pronto", description: `Pedido ${orderId} está pronto para retirada/entrega.` });
+     else toast({ title: "Erro", description: `Falha ao marcar pedido ${orderId} como pronto.`, variant: "destructive"});
   };
 
   const handleOptimizeRoute = (order: Order) => {
@@ -98,7 +105,7 @@ export default function PizzaFlowDashboard() {
   };
 
   const handleOptimizeMultiRoute = () => {
-    const ordersToOptimize = orders.filter(o => o.status === 'Aguardando Retirada');
+    const ordersToOptimize = orders.filter(o => o.status === 'AguardandoRetirada');
     if (ordersToOptimize.length === 0) {
         toast({ title: "Nenhum Pedido", description: "Não há pedidos aguardando retirada para otimizar.", variant: "default" });
         return;
@@ -109,24 +116,35 @@ export default function PizzaFlowDashboard() {
   const handleAssignDelivery = async (orderId: string, route: string, deliveryPerson: string) => {
     const updatedOrder = await assignDelivery(orderId, route, deliveryPerson);
     updateOrderInState(updatedOrder);
-    toast({ title: "Entrega Designada", description: `Pedido ${orderId} saiu para entrega com ${deliveryPerson}.` });
-    setSelectedOrderForRoute(null);
+    if(updatedOrder) {
+        toast({ title: "Entrega Designada", description: `Pedido ${orderId} saiu para entrega com ${deliveryPerson}.` });
+        setSelectedOrderForRoute(null);
+    } else {
+        toast({ title: "Erro", description: `Falha ao designar entrega para ${orderId}.`, variant: "destructive"});
+    }
   };
   
   const handleAssignMultiDelivery = async (routePlan: OptimizeMultiDeliveryRouteOutput, deliveryPerson: string) => {
     const updatedOrders = await assignMultiDelivery(routePlan, deliveryPerson);
     updateOrderInState(updatedOrders);
-    toast({ title: "Entregas em Lote Designadas", description: `${updatedOrders.length} pedidos saíram para entrega com ${deliveryPerson}.` });
-    setIsMultiRouteModalOpen(false);
+    if(updatedOrders && updatedOrders.length > 0) {
+        toast({ title: "Entregas em Lote Designadas", description: `${updatedOrders.length} pedidos saíram para entrega com ${deliveryPerson}.` });
+        setIsMultiRouteModalOpen(false);
+    } else {
+         toast({ title: "Erro", description: "Falha ao designar entregas em lote.", variant: "destructive"});
+    }
 };
 
 
   const handleMarkDelivered = async (orderToUpdate: Order) => {
-    const updated = await updateOrderStatus(orderToUpdate.id, 'Entregue');
+    const updated = await updateOrderStatus(orderToUpdate.id, 'Entregue'); // Prisma enum
     if (updated) {
        updateOrderInState(updated);
+       // Manter modal aberto para registrar pagamento
        setSelectedOrderForDetails(updated); 
-       toast({ title: "Pedido Entregue", description: `Pedido ${orderToUpdate.id} marcado como entregue. Por favor, registre o pagamento.` });
+       toast({ title: "Pedido Entregue", description: `Pedido ${orderToUpdate.id} marcado como entregue. Registre o pagamento.` });
+    } else {
+        toast({ title: "Erro", description: `Falha ao marcar pedido ${orderToUpdate.id} como entregue.`, variant: "destructive"});
     }
   };
   
@@ -137,23 +155,29 @@ export default function PizzaFlowDashboard() {
   const handleUpdateOrderDetails = async (updatedOrderData: Order) => {
     const updatedOrder = await updateOrderDetails(updatedOrderData);
     updateOrderInState(updatedOrder);
-    if(updatedOrderData.paymentStatus === "Pago" && selectedOrderForDetails?.paymentStatus === "Pendente"){
-        toast({ title: "Pagamento Registrado", description: `Pagamento para o pedido ${updatedOrderData.id} confirmado.` });
-    }
-    if(updatedOrderData.status !== selectedOrderForDetails?.status){
-      toast({ title: "Status Atualizado", description: `Status do pedido ${updatedOrderData.id} alterado para ${updatedOrderData.status}.` });
+    if(updatedOrder){
+        let toastMessage = "Detalhes do pedido atualizados.";
+        if (updatedOrderData.paymentStatus === "Pago" && selectedOrderForDetails?.paymentStatus === "Pendente") {
+            toastMessage = `Pagamento para o pedido ${updatedOrderData.id} confirmado.`;
+        } else if (updatedOrderData.status !== selectedOrderForDetails?.status) {
+            toastMessage = `Status do pedido ${updatedOrderData.id} alterado para ${updatedOrderData.status}.`;
+        }
+        toast({ title: "Sucesso", description: toastMessage });
+        setSelectedOrderForDetails(updatedOrder); // Atualiza o modal com os novos dados
+    } else {
+        toast({ title: "Erro", description: "Falha ao atualizar detalhes do pedido.", variant: "destructive"});
     }
   };
 
 
   const pendingOrders = orders.filter(o => o.status === 'Pendente');
-  const preparingOrders = orders.filter(o => o.status === 'Em Preparo');
-  const waitingPickupOrders = orders.filter(o => o.status === 'Aguardando Retirada');
-  const outForDeliveryOrders = orders.filter(o => o.status === 'Saiu para Entrega');
+  const preparingOrders = orders.filter(o => o.status === 'EmPreparo');
+  const waitingPickupOrders = orders.filter(o => o.status === 'AguardandoRetirada');
+  const outForDeliveryOrders = orders.filter(o => o.status === 'SaiuParaEntrega');
   const deliveredOrders = orders.filter(o => o.status === 'Entregue');
 
 
-  if (isLoading && orders.length === 0) { // Show full page loader only on initial load
+  if (isLoading && orders.length === 0) { 
     return (
       <div className="flex flex-col min-h-screen">
         <AppHeader appName={PIZZERIA_NAME} />
@@ -186,8 +210,19 @@ export default function PizzaFlowDashboard() {
           </div>
         </div>
 
+        {errorLoading && (
+            <div className="mb-8 p-4 border-2 border-destructive rounded-lg shadow-lg bg-destructive/10 text-destructive text-center">
+                <AlertTriangle className="mx-auto h-8 w-8 mb-2" />
+                <p className="font-semibold">Erro ao Carregar Pedidos!</p>
+                <p className="text-sm">{errorLoading}</p>
+                <Button onClick={() => fetchOrders(true)} variant="destructive" size="sm" className="mt-2">
+                    Tentar Novamente
+                </Button>
+            </div>
+        )}
+
         {/* Coluna de Pedidos Pendentes Separada e Destacada */}
-        {pendingOrders.length > 0 && (
+        {pendingOrders.length > 0 && !errorLoading && (
             <div className="mb-8 p-4 border-2 border-primary rounded-lg shadow-lg bg-primary/5">
                  <div className="flex items-center mb-4">
                     <ShoppingCart className="h-8 w-8 text-primary" />
@@ -207,9 +242,9 @@ export default function PizzaFlowDashboard() {
                     </span>
                 </div>
                 <OrderColumn
-                    title="" // Title already above
+                    title="" 
                     orders={pendingOrders}
-                    icon={null} // Icon already above
+                    icon={null} 
                     onTakeOrder={handleTakeOrder}
                     onViewDetails={handleViewDetails}
                     isPendingColumn={true}
@@ -218,8 +253,7 @@ export default function PizzaFlowDashboard() {
         )}
 
 
-        <div className="flex-grow grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4 gap-4 md:gap-6">
-          {/* Outras colunas, exceto Pendentes que já foi renderizada */}
+        <div className={`flex-grow grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4 gap-4 md:gap-6 ${errorLoading ? 'opacity-50 pointer-events-none' : ''}`}>
           <OrderColumn
             title="Em Preparo"
             orders={preparingOrders}
@@ -231,7 +265,7 @@ export default function PizzaFlowDashboard() {
             title="Aguardando Retirada"
             orders={waitingPickupOrders}
             icon={<PackageOpen className="h-6 w-6 text-orange-500" />}
-            onOptimizeRoute={handleOptimizeRoute} // Para otimização individual
+            onOptimizeRoute={handleOptimizeRoute} 
             onViewDetails={handleViewDetails}
           />
           <OrderColumn

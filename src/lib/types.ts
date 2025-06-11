@@ -1,4 +1,5 @@
 
+
 // Enums from Prisma will be imported or mapped if needed client-side
 // For now, these string unions are fine for client-side logic.
 export type OrderStatus = "Pendente" | "Em Preparo" | "Aguardando Retirada" | "Saiu para Entrega" | "Entregue" | "Cancelado";
@@ -14,13 +15,17 @@ export interface OrderItem {
   quantity: number;
   price: number; // Price per item at the time of order (Decimal in DB, number in JS)
   itemNotes?: string;
+  // Campos do MenuItem para exibição no carrinho, se necessário, sem precisar de join complexo no client
+  imageUrl?: string; 
+  dataAiHint?: string;
+  isPromotion?: boolean;
 }
 
 export interface Coupon {
   id: string;
   code: string;
   description?: string;
-  discountType: DiscountType;
+  discountType: DiscountType; // Prisma enum will be mapped
   discountValue: number; // Decimal in DB, number in JS
   isActive: boolean;
   expiresAt?: string; // ISO string
@@ -37,16 +42,17 @@ export interface Order {
   customerReferencePoint?: string;
   items: OrderItem[];
   totalAmount: number; // Decimal in DB, number in JS
-  status: OrderStatus;
+  status: OrderStatus; // Prisma enum will be mapped
   createdAt: string; // ISO string for serializability
   updatedAt?: string;
   deliveredAt?: string;
   estimatedDeliveryTime?: string;
   deliveryPerson?: string;
-  paymentType?: PaymentType;
-  paymentStatus: PaymentStatus;
+  paymentType?: PaymentType | null; // Prisma enum will be mapped
+  paymentStatus: PaymentStatus; // Prisma enum will be mapped
   notes?: string;
   optimizedRoute?: string;
+  nfeLink?: string | null; // Novo campo para link da NFe
   
   appliedCouponCode?: string | null;
   appliedCouponDiscount?: number | null; // Decimal in DB, number in JS
@@ -75,7 +81,6 @@ export interface TimeEstimateData {
 export interface CouponUsageData {
     totalCouponsUsed: number;
     totalDiscountAmount: number;
-    // Potentially: dailyCouponUsage: { date: string; count: number; totalValue: number }[]
 }
 
 export interface DashboardAnalyticsData {
@@ -99,15 +104,27 @@ export interface MenuItem {
   dataAiHint?: string;
 }
 
+// Para NewOrderClientData, items deve ser apenas o essencial para criar OrderItem
+// O backend vai buscar o nome e preço atuais do MenuItem para popular o OrderItem no banco,
+// ou podemos passar o preço atual aqui para congelá-lo no momento do pedido.
+// Vou manter a estrutura atual onde o client envia price, name.
+export interface NewOrderClientItemData {
+    menuItemId: string;
+    quantity: number;
+    price: number; // Price at the time of adding to cart
+    name: string;  // Name at the time of adding to cart
+    itemNotes?: string;
+}
+
 export interface NewOrderClientData {
     customerName: string;
     customerAddress: string;
     customerCep?: string;
     customerReferencePoint?: string;
-    items: OrderItem[]; 
+    items: NewOrderClientItemData[]; 
     paymentType: PaymentType;
     notes?: string;
-    couponCode?: string; // Novo campo para cupom
+    couponCode?: string;
 }
 
 export interface CepAddress {
@@ -138,6 +155,11 @@ export interface OptimizeMultiDeliveryRouteOutput {
   summary?: string; 
 }
 
-// Para usar com Prisma Client, precisamos do cliente instanciado.
-// Geralmente em um arquivo lib/prisma.ts ou db.ts
-// export { PrismaClient } from '@prisma/client'; -> faremos isso no actions.ts por enquanto ou um lib/db.ts
+export interface OptimizeDeliveryRouteInput {
+  pizzeriaAddress: string;
+  customerAddress: string;
+}
+
+export interface OptimizeDeliveryRouteOutput {
+  optimizedRoute: string; // URL
+}

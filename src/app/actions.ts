@@ -2,11 +2,11 @@
 "use server";
 import { prisma } from '@/lib/db';
 import type { 
-  Order as PrismaOrder, // Renomeando para evitar conflito com o tipo Order local
+  Order as PrismaOrder, 
   MenuItem as PrismaMenuItem, 
   OrderItem as PrismaOrderItem,
   Coupon as PrismaCoupon,
-  OrderStatus as PrismaOrderStatus, // Usando o enum do Prisma
+  OrderStatus as PrismaOrderStatus, 
   PaymentType as PrismaPaymentType,
   PaymentStatus as PrismaPaymentStatus,
   DiscountType as PrismaDiscountType
@@ -15,9 +15,10 @@ import type {
 import type { 
     Order, 
     MenuItem, 
-    OrderItem, 
+    OrderItem, // This is our client-side OrderItem, might differ slightly from PrismaOrderItem
     NewOrderClientData,
-    OrderStatus, // Mantendo o tipo string union para uso no cliente, se necessário
+    NewOrderClientItemData, // Added this for clarity
+    OrderStatus, 
     PaymentType,
     PaymentStatus,
     DashboardAnalyticsData, 
@@ -26,20 +27,33 @@ import type {
     CepAddress, 
     OptimizeMultiDeliveryRouteInput, 
     OptimizeMultiDeliveryRouteOutput,
+    OptimizeDeliveryRouteInput,
+    OptimizeDeliveryRouteOutput,
     TimeEstimateData,
     CouponUsageData,
     Coupon
 } from '@/lib/types';
-import { PIZZERIA_ADDRESS } from '@/lib/types';
+// import { PIZZERIA_ADDRESS } from '@/lib/types'; // No longer used directly in AI call from here
 import { optimizeDeliveryRoute as aiOptimizeDeliveryRoute, optimizeMultiDeliveryRoute as aiOptimizeMultiDeliveryRoute } from '@/ai/flows/optimize-delivery-route';
 import { format, subDays, parseISO, differenceInMinutes, startOfDay, endOfDay } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Decimal } from '@prisma/client/runtime/library'; // Import Decimal
+import { Decimal } from '@prisma/client/runtime/library'; 
 
-// Helper para converter Decimal para number (e vice-versa se necessário)
-const toJSON = <T>(data: T): T => JSON.parse(JSON.stringify(data, (key, value) =>
-    typeof value === 'bigint' ? value.toString() : value instanceof Decimal ? Number(value.toFixed(2)) : value
-));
+// Helper para converter Decimal para number e datas para string ISO
+const toJSONSafe = <T>(data: T): T => {
+  return JSON.parse(JSON.stringify(data, (key, value) => {
+    if (value instanceof Decimal) {
+      return Number(value.toFixed(2));
+    }
+    if (value instanceof Date) {
+      return value.toISOString();
+    }
+    if (typeof value === 'bigint') {
+        return value.toString();
+    }
+    return value;
+  })) as T;
+};
 
 
 // --- Funções do Cardápio ---
@@ -47,17 +61,20 @@ export async function getAvailableMenuItems(): Promise<MenuItem[]> {
   const items = await prisma.menuItem.findMany({
     orderBy: { category: 'asc' }
   });
-  return toJSON(items);
+  return toJSONSafe(items);
 }
 
-export async function addMenuItem(item: Omit<MenuItem, 'id' | 'dataAiHint'>): Promise<MenuItem> {
+export async function addMenuItem(item: Omit<MenuItem, 'id' | 'createdAt' | 'updatedAt' | 'orderItems'>): Promise<MenuItem> {
   const newItem = await prisma.menuItem.create({
     data: {
       ...item,
-      price: new Decimal(item.price),
+      price: new Decimal(item.price), // Garante que o preço seja Decimal
+      description: item.description || null,
+      imageUrl: item.imageUrl || null,
+      dataAiHint: item.dataAiHint || null,
     },
   });
-  return toJSON(newItem);
+  return toJSONSafe(newItem);
 }
 
 export async function updateMenuItem(updatedItem: MenuItem): Promise<MenuItem | null> {
@@ -66,10 +83,13 @@ export async function updateMenuItem(updatedItem: MenuItem): Promise<MenuItem | 
       where: { id: updatedItem.id },
       data: {
         ...updatedItem,
-        price: new Decimal(updatedItem.price),
+        price: new Decimal(updatedItem.price), // Garante que o preço seja Decimal
+        description: updatedItem.description || null,
+        imageUrl: updatedItem.imageUrl || null,
+        dataAiHint: updatedItem.dataAiHint || null,
       },
     });
-    return toJSON(item);
+    return toJSONSafe(item);
   } catch (error) {
     console.error("Error updating menu item:", error);
     return null;
@@ -78,6 +98,10 @@ export async function updateMenuItem(updatedItem: MenuItem): Promise<MenuItem | 
 
 export async function deleteMenuItem(itemId: string): Promise<boolean> {
   try {
+    // Primeiro, verificar se o item está em algum OrderItem.
+    // Se estiver, idealmente não deveria ser excluído, ou os OrderItems deveriam ser tratados.
+    // Por simplicidade, vamos permitir a exclusão. Em um app real, adicione lógica de verificação.
+    // await prisma.orderItem.deleteMany({ where: { menuItemId: itemId }}); // Opcional: remover dos pedidos
     await prisma.menuItem.delete({
       where: { id: itemId },
     });
@@ -91,19 +115,29 @@ export async function deleteMenuItem(itemId: string): Promise<boolean> {
 // --- Funções de Pedidos ---
 export async function getOrders(): Promise<Order[]> {
   const orders = await prisma.order.findMany({
-    where: { status: { not: 'Cancelado' as PrismaOrderStatus } },
-    include: { items: true, coupon: true },
+    where: { status: { not: PrismaOrderStatus.Cancelado } },
+    include: { 
+        items: {
+            include: { menuItem: true } // Para ter acesso ao imageUrl e outros dados do MenuItem original se necessário
+        }, 
+        coupon: true 
+    },
     orderBy: { createdAt: 'desc' },
   });
-  return toJSON(orders);
+  return toJSONSafe(orders);
 }
 
 export async function getOrderById(orderId: string): Promise<Order | null> {
   const order = await prisma.order.findUnique({
     where: { id: orderId },
-    include: { items: true, coupon: true },
+    include: { 
+        items: {
+            include: { menuItem: true }
+        }, 
+        coupon: true 
+    },
   });
-  return order ? toJSON(order) : null;
+  return order ? toJSONSafe(order) : null;
 }
 
 export async function updateOrderStatus(orderId: string, status: OrderStatus): Promise<Order | null> {
@@ -112,7 +146,7 @@ export async function updateOrderStatus(orderId: string, status: OrderStatus): P
         status: status as PrismaOrderStatus, 
         updatedAt: new Date() 
     };
-    if (status === 'Entregue') {
+    if (status === PrismaOrderStatus.Entregue) {
       dataToUpdate.deliveredAt = new Date();
     }
     const updatedOrder = await prisma.order.update({
@@ -120,7 +154,7 @@ export async function updateOrderStatus(orderId: string, status: OrderStatus): P
       data: dataToUpdate,
       include: { items: true, coupon: true },
     });
-    return toJSON(updatedOrder);
+    return toJSONSafe(updatedOrder);
   } catch (error) {
     console.error(`Error updating status for order ${orderId}:`, error);
     return null;
@@ -132,14 +166,14 @@ export async function assignDelivery(orderId: string, route: string, deliveryPer
     const updatedOrder = await prisma.order.update({
       where: { id: orderId },
       data: {
-        status: 'SaiuParaEntrega' as PrismaOrderStatus,
+        status: PrismaOrderStatus.SaiuParaEntrega,
         optimizedRoute: route,
         deliveryPerson: deliveryPerson,
         updatedAt: new Date(),
       },
       include: { items: true, coupon: true },
     });
-    return toJSON(updatedOrder);
+    return toJSONSafe(updatedOrder);
   } catch (error) {
     console.error(`Error assigning delivery for order ${orderId}:`, error);
     return null;
@@ -154,7 +188,7 @@ export async function assignMultiDelivery(routePlan: OptimizeMultiDeliveryRouteO
         const updatedOrder = await prisma.order.update({
           where: { id: orderId },
           data: {
-            status: 'SaiuParaEntrega' as PrismaOrderStatus,
+            status: PrismaOrderStatus.SaiuParaEntrega,
             optimizedRoute: leg.googleMapsUrl,
             deliveryPerson: deliveryPerson,
             updatedAt: new Date(),
@@ -164,30 +198,38 @@ export async function assignMultiDelivery(routePlan: OptimizeMultiDeliveryRouteO
         updatedOrdersPrisma.push(updatedOrder);
       } catch (error) {
         console.error(`Error assigning multi-delivery for order ${orderId}:`, error);
-        // Continue com os outros pedidos
       }
     }
   }
-  return toJSON(updatedOrdersPrisma);
+  return toJSONSafe(updatedOrdersPrisma);
 }
 
 export async function updateOrderDetails(updatedOrderData: Order): Promise<Order | null> {
   try {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { items, coupon, ...orderData } = updatedOrderData; // Itens são gerenciados separadamente ou não são atualizáveis aqui
-    const updatedOrder = await prisma.order.update({
-      where: { id: orderData.id },
-      data: {
+    const { items, coupon, createdAt, updatedAt, ...orderData } = updatedOrderData; 
+    
+    const dataForUpdate: any = { // Usar 'any' temporariamente para flexibilidade
         ...orderData,
         totalAmount: new Decimal(orderData.totalAmount),
-        paymentType: orderData.paymentType as PrismaPaymentType || null,
+        paymentType: orderData.paymentType ? orderData.paymentType as PrismaPaymentType : null,
         paymentStatus: orderData.paymentStatus as PrismaPaymentStatus,
         updatedAt: new Date(),
-        appliedCouponDiscount: orderData.appliedCouponDiscount ? new Decimal(orderData.appliedCouponDiscount) : null,
-      },
+        nfeLink: orderData.nfeLink || null,
+    };
+    if (orderData.appliedCouponDiscount !== undefined && orderData.appliedCouponDiscount !== null) {
+        dataForUpdate.appliedCouponDiscount = new Decimal(orderData.appliedCouponDiscount);
+    } else {
+        dataForUpdate.appliedCouponDiscount = null;
+    }
+
+
+    const updatedOrder = await prisma.order.update({
+      where: { id: orderData.id },
+      data: dataForUpdate,
       include: { items: true, coupon: true },
     });
-    return toJSON(updatedOrder);
+    return toJSONSafe(updatedOrder);
   } catch (error) {
     console.error(`Error updating details for order ${updatedOrderData.id}:`, error);
     return null;
@@ -196,37 +238,50 @@ export async function updateOrderDetails(updatedOrderData: Order): Promise<Order
 
 
 export async function addNewOrder(newOrderData: NewOrderClientData): Promise<Order> {
-  let finalTotalAmount = newOrderData.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  let subTotal = 0;
+  for (const item of newOrderData.items) {
+      subTotal += item.price * item.quantity;
+  }
+
+  let finalTotalAmount = subTotal;
   let appliedCoupon: PrismaCoupon | null = null;
-  let couponDiscountAmount = 0;
+  let couponDiscountAmount = new Decimal(0);
 
   if (newOrderData.couponCode) {
-    appliedCoupon = await prisma.coupon.findUnique({
+    const potentialCoupon = await prisma.coupon.findUnique({
       where: { code: newOrderData.couponCode, isActive: true },
     });
 
-    if (appliedCoupon) {
-      if (appliedCoupon.expiresAt && new Date(appliedCoupon.expiresAt) < new Date()) {
-        appliedCoupon = null; // Cupom expirado
+    if (potentialCoupon) {
+      let isValid = true;
+      if (potentialCoupon.expiresAt && new Date(potentialCoupon.expiresAt) < new Date()) {
+        isValid = false; 
       }
-      if (appliedCoupon && appliedCoupon.usageLimit && appliedCoupon.timesUsed >= appliedCoupon.usageLimit) {
-        appliedCoupon = null; // Limite de uso atingido
+      if (isValid && potentialCoupon.usageLimit && potentialCoupon.timesUsed >= potentialCoupon.usageLimit) {
+        isValid = false; 
       }
-      if (appliedCoupon && appliedCoupon.minOrderAmount && finalTotalAmount < Number(appliedCoupon.minOrderAmount)) {
-        appliedCoupon = null; // Valor mínimo do pedido não atingido
+      if (isValid && potentialCoupon.minOrderAmount && new Decimal(subTotal).lt(potentialCoupon.minOrderAmount)) {
+        isValid = false;
       }
-
-      if (appliedCoupon) {
-        if (appliedCoupon.discountType === 'PERCENTAGE' as PrismaDiscountType) {
-          couponDiscountAmount = finalTotalAmount * (Number(appliedCoupon.discountValue) / 100);
-        } else if (appliedCoupon.discountType === 'FIXED_AMOUNT' as PrismaDiscountType) {
-          couponDiscountAmount = Number(appliedCoupon.discountValue);
-        }
-        couponDiscountAmount = Math.min(couponDiscountAmount, finalTotalAmount); // Desconto não pode ser maior que o total
-        finalTotalAmount -= couponDiscountAmount;
+      if (isValid) {
+        appliedCoupon = potentialCoupon;
       }
     }
   }
+
+  if (appliedCoupon) {
+    if (appliedCoupon.discountType === PrismaDiscountType.PERCENTAGE) {
+      couponDiscountAmount = new Decimal(subTotal).mul(appliedCoupon.discountValue.div(100));
+    } else if (appliedCoupon.discountType === PrismaDiscountType.FIXED_AMOUNT) {
+      couponDiscountAmount = appliedCoupon.discountValue;
+    }
+    // Ensure discount doesn't exceed subtotal
+    if (couponDiscountAmount.gt(new Decimal(subTotal))) {
+        couponDiscountAmount = new Decimal(subTotal);
+    }
+    finalTotalAmount = new Decimal(subTotal).sub(couponDiscountAmount).toNumber();
+  }
+
 
   const order = await prisma.order.create({
     data: {
@@ -235,21 +290,21 @@ export async function addNewOrder(newOrderData: NewOrderClientData): Promise<Ord
       customerCep: newOrderData.customerCep,
       customerReferencePoint: newOrderData.customerReferencePoint,
       totalAmount: new Decimal(finalTotalAmount.toFixed(2)),
-      paymentType: newOrderData.paymentType as PrismaPaymentType || null,
+      paymentType: newOrderData.paymentType ? newOrderData.paymentType as PrismaPaymentType : null,
       notes: newOrderData.notes,
-      status: 'Pendente' as PrismaOrderStatus,
-      paymentStatus: newOrderData.paymentType === 'Online' ? 'Pago' as PrismaPaymentStatus : 'Pendente' as PrismaPaymentStatus,
+      status: PrismaOrderStatus.Pendente,
+      paymentStatus: newOrderData.paymentType === 'Online' ? PrismaPaymentStatus.Pago : PrismaPaymentStatus.Pendente,
       items: {
-        create: newOrderData.items.map(item => ({
+        create: newOrderData.items.map((item: NewOrderClientItemData) => ({
           menuItemId: item.menuItemId,
-          name: item.name,
+          name: item.name, 
           quantity: item.quantity,
-          price: new Decimal(item.price),
+          price: new Decimal(item.price), 
           itemNotes: item.itemNotes,
         })),
       },
       appliedCouponCode: appliedCoupon?.code,
-      appliedCouponDiscount: appliedCoupon ? new Decimal(couponDiscountAmount.toFixed(2)) : null,
+      appliedCouponDiscount: appliedCoupon ? couponDiscountAmount : null,
       couponId: appliedCoupon?.id,
     },
     include: { items: true, coupon: true },
@@ -262,7 +317,7 @@ export async function addNewOrder(newOrderData: NewOrderClientData): Promise<Ord
     });
   }
 
-  return toJSON(order);
+  return toJSONSafe(order);
 }
 
 
@@ -273,32 +328,26 @@ export async function simulateNewOrder(): Promise<Order> {
     const customerNames = ["Laura Mendes", "Pedro Alves", "Sofia Lima", "Bruno Gomes", "Gabriela Rocha", "Rafael Souza"];
     
     const numItemsToOrder = Math.floor(Math.random() * 2) + 1;
-    const orderItemsClient: OrderItem[] = []; // Este é o tipo usado em NewOrderClientData
+    const orderItemsClient: NewOrderClientItemData[] = [];
     const shuffledMenuItems = [...menuItems].sort(() => 0.5 - Math.random());
     
     for (let i = 0; i < numItemsToOrder; i++) {
         const menuItem = shuffledMenuItems[i % shuffledMenuItems.length];
-        const item: OrderItem = { // Corresponde ao tipo OrderItem de lib/types.ts para NewOrderClientData
-            id: `temp_${i}`, // ID temporário, o backend irá criar o ID real do OrderItem no DB
+        const item: NewOrderClientItemData = { 
             menuItemId: menuItem.id,
             name: menuItem.name,
             quantity: 1, 
-            price: menuItem.price,
+            price: menuItem.price, // Preço no momento da simulação
         };
         if (Math.random() < 0.2) {
             item.itemNotes = "Observação simulada para item.";
         }
-         if (menuItem.category !== "Bebidas" && menuItem.category !== "Entradas" && orderItemsClient.length === 0) {
-            orderItemsClient.push(item);
-         } else if (orderItemsClient.length > 0 && (menuItem.category === "Bebidas" || menuItem.category === "Entradas")) {
-             item.quantity = Math.floor(Math.random() * 2) + 1;
-             orderItemsClient.push(item);
-         }
+        orderItemsClient.push(item);
     }
+    
      if (orderItemsClient.length === 0 && shuffledMenuItems.length > 0) {
         const fallbackItem = shuffledMenuItems[0];
          orderItemsClient.push({ 
-             id: 'temp_fallback', 
              menuItemId: fallbackItem.id, 
              name: fallbackItem.name, 
              quantity: 1, 
@@ -307,8 +356,8 @@ export async function simulateNewOrder(): Promise<Order> {
     }
 
     const randomCustomer = customerNames[Math.floor(Math.random() * customerNames.length)];
-    const paymentTypes: PaymentType[] = ["Dinheiro", "Cartao", "Online"]; // Use o tipo PaymentType de lib/types.ts
-    const randomPaymentType = paymentTypes[Math.floor(Math.random() * paymentTypes.length)];
+    const paymentTypesClient: PaymentType[] = ["Dinheiro", "Cartao", "Online"]; 
+    const randomPaymentType = paymentTypesClient[Math.floor(Math.random() * paymentTypesClient.length)];
     
     const newOrderPayload: NewOrderClientData = {
         customerName: randomCustomer,
@@ -319,12 +368,12 @@ export async function simulateNewOrder(): Promise<Order> {
         paymentType: randomPaymentType,
         notes: Math.random() > 0.7 ? "Entregar o mais rápido possível." : ""
     };
-    return addNewOrder(newOrderPayload);
+    return addNewOrder(newOrderPayload); // addNewOrder já usa toJSONSafe
 }
 
 // --- Funções de IA ---
-export async function optimizeRouteAction(pizzeriaAddress: string, customerAddress: string): Promise<{ optimizedRoute: string }> {
-    return aiOptimizeDeliveryRoute({ pizzeriaAddress, customerAddress });
+export async function optimizeRouteAction(input: OptimizeDeliveryRouteInput): Promise<OptimizeDeliveryRouteOutput> {
+    return aiOptimizeDeliveryRoute(input);
 }
 
 export async function optimizeMultiRouteAction(input: OptimizeMultiDeliveryRouteInput): Promise<OptimizeMultiDeliveryRouteOutput> {
@@ -345,14 +394,14 @@ const statusColorsForCharts: Record<OrderStatus, string> = {
 
 export async function getDashboardAnalytics(): Promise<DashboardAnalyticsData> {
   const allOrders = await prisma.order.findMany({
-    include: { coupon: true } // Incluir dados do cupom para análise
+    include: { coupon: true } 
   });
 
-  const nonCancelledOrders = allOrders.filter(o => o.status !== 'Cancelado');
+  const nonCancelledOrders = allOrders.filter(o => o.status !== PrismaOrderStatus.Cancelado);
   const totalOrders = nonCancelledOrders.length;
   
   const totalRevenue = nonCancelledOrders
-    .filter(o => o.paymentStatus === 'Pago')
+    .filter(o => o.paymentStatus === PrismaPaymentStatus.Pago)
     .reduce((sum, order) => sum + Number(order.totalAmount), 0);
   
   const averageOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
@@ -363,7 +412,7 @@ export async function getDashboardAnalytics(): Promise<DashboardAnalyticsData> {
     AguardandoRetirada: 0,
     SaiuParaEntrega: 0,
     Entregue: 0,
-    Cancelado: 0, // Incluído para completar o tipo, mas não usado no gráfico
+    Cancelado: 0, 
   };
 
   allOrders.forEach(order => {
@@ -373,15 +422,15 @@ export async function getDashboardAnalytics(): Promise<DashboardAnalyticsData> {
   });
 
   const ordersByStatus: OrdersByStatusData[] = (Object.keys(statusCounts) as PrismaOrderStatus[])
-    .filter(status => status !== 'Cancelado' && statusCounts[status] > 0) 
+    .filter(status => status !== PrismaOrderStatus.Cancelado && statusCounts[status] > 0) 
     .map(status => ({
-      name: status as OrderStatus, // Cast para o tipo string union
+      name: status as OrderStatus, 
       value: statusCounts[status],
       fill: statusColorsForCharts[status as OrderStatus] || "hsl(var(--muted))",
     }));
 
   const dailyRevenueMap = new Map<string, number>();
-  const today = new Date();
+  const today = startOfDay(new Date()); // Use startOfDay for consistent comparison
   for (let i = 6; i >= 0; i--) {
     const day = subDays(today, i);
     const formattedDay = format(day, 'dd/MM', { locale: ptBR });
@@ -389,8 +438,8 @@ export async function getDashboardAnalytics(): Promise<DashboardAnalyticsData> {
   }
   
   nonCancelledOrders.forEach(order => {
-    if (order.paymentStatus === 'Pago') {
-      const orderDate = order.createdAt; // Já é um objeto Date
+    if (order.paymentStatus === PrismaPaymentStatus.Pago) {
+      const orderDate = startOfDay(order.createdAt); 
       if (orderDate >= subDays(today, 6) && orderDate <= today) {
          const formattedDay = format(orderDate, 'dd/MM', { locale: ptBR });
          dailyRevenueMap.set(formattedDay, (dailyRevenueMap.get(formattedDay) || 0) + Number(order.totalAmount));
@@ -404,10 +453,10 @@ export async function getDashboardAnalytics(): Promise<DashboardAnalyticsData> {
     Receita: revenue,
   }));
 
-  const deliveredOrders = allOrders.filter(o => o.status === 'Entregue' && o.deliveredAt);
+  const deliveredOrders = allOrders.filter(o => o.status === PrismaOrderStatus.Entregue && o.deliveredAt);
   let totalDeliveryTimeMinutes = 0;
   deliveredOrders.forEach(order => {
-    if (order.deliveredAt) { // Checagem de nulidade para deliveredAt
+    if (order.deliveredAt) { 
         totalDeliveryTimeMinutes += differenceInMinutes(order.deliveredAt, order.createdAt);
     }
   });
@@ -417,8 +466,7 @@ export async function getDashboardAnalytics(): Promise<DashboardAnalyticsData> {
     averageTimeToDeliveryMinutes,
   };
 
-  // Coupon Analytics
-  const couponsUsed = allOrders.filter(o => o.appliedCouponCode !== null);
+  const couponsUsed = allOrders.filter(o => o.appliedCouponCode !== null && o.appliedCouponDiscount?.gt(0));
   const totalCouponsUsed = couponsUsed.length;
   const totalDiscountAmount = couponsUsed.reduce((sum, order) => sum + Number(order.appliedCouponDiscount || 0), 0);
 
@@ -427,7 +475,7 @@ export async function getDashboardAnalytics(): Promise<DashboardAnalyticsData> {
     totalDiscountAmount,
   };
 
-  return {
+  return toJSONSafe({ // Ensure the final returned object is also safe
     totalOrders,
     totalRevenue,
     averageOrderValue,
@@ -435,13 +483,13 @@ export async function getDashboardAnalytics(): Promise<DashboardAnalyticsData> {
     dailyRevenue,
     timeEstimates,
     couponUsage,
-  };
+  });
 }
 
 
 // --- Funções de Exportação e CEP ---
 export async function exportOrdersToCSV(): Promise<string> {
-  const ordersToExport = await getOrders(); 
+  const ordersToExport = await getOrders(); // This already uses Prisma and toJSONSafe
   if (ordersToExport.length === 0) {
     return "Nenhum pedido para exportar.";
   }
@@ -449,7 +497,7 @@ export async function exportOrdersToCSV(): Promise<string> {
   const header = [
     "ID do Pedido", "Nome do Cliente", "Endereço do Cliente", "CEP", "Ponto de Referência",
     "Itens (Nome|Qtd|Preço Unitário|Obs Item)", "Valor Total (R$)", "Status do Pedido", "Data de Criação", "Data de Atualização", "Data de Entrega",
-    "Entregador(a)", "Forma de Pagamento", "Status do Pagamento", "Observações Gerais", "Rota Otimizada (URL)",
+    "Entregador(a)", "Forma de Pagamento", "Status do Pagamento", "Observações Gerais", "Rota Otimizada (URL)", "Link NFe",
     "Cupom Aplicado", "Desconto do Cupom (R$)"
   ].join(',');
 
@@ -475,6 +523,7 @@ export async function exportOrdersToCSV(): Promise<string> {
       order.paymentStatus,
       (order.notes || '').replace(/[\r\n,]+/g, ' '), 
       (order.optimizedRoute || ''),
+      (order.nfeLink || ''), // NFe Link
       order.appliedCouponCode || '',
       order.appliedCouponDiscount ? Number(order.appliedCouponDiscount).toFixed(2).replace('.', ',') : '0,00'
     ].map(field => `"${String(field === null || field === undefined ? '' : field).replace(/"/g, '""')}"`).join(',');
@@ -484,7 +533,8 @@ export async function exportOrdersToCSV(): Promise<string> {
 }
 
 export async function fetchAddressFromCep(cep: string): Promise<CepAddress | null> {
-  await new Promise(resolve => setTimeout(resolve, 700)); 
+  // Simulação de API de CEP
+  await new Promise(resolve => setTimeout(resolve, 600)); 
   
   const cleanedCep = cep.replace(/\D/g, '');
   if (cleanedCep.length !== 8) {
@@ -493,7 +543,16 @@ export async function fetchAddressFromCep(cep: string): Promise<CepAddress | nul
   }
 
   console.log(`Simulando busca por CEP: ${cleanedCep}`);
-  if (cleanedCep === "12345678") {
+  // Adicionando o CEP do usuário à simulação
+  if (cleanedCep === "12402170") {
+    return {
+      street: "Rua Doutor José Ortiz Monteiro Patto (Mock)",
+      neighborhood: "Campo Alegre (Mock)",
+      city: "Pindamonhangaba (Mock)",
+      state: "SP",
+      fullAddress: "Rua Doutor José Ortiz Monteiro Patto, Campo Alegre, Pindamonhangaba - SP"
+    };
+  } else if (cleanedCep === "12345678") {
     return {
       street: "Rua das Maravilhas (Mock)",
       neighborhood: "Bairro Sonho (Mock)",
@@ -501,7 +560,7 @@ export async function fetchAddressFromCep(cep: string): Promise<CepAddress | nul
       state: "CF",
       fullAddress: "Rua das Maravilhas (Mock), Bairro Sonho (Mock), Cidade Fantasia (Mock) - CF"
     };
-  } else if (cleanedCep === "01001000") {
+  } else if (cleanedCep === "01001000") { // Exemplo da Praça da Sé
      return {
       street: "Praça da Sé (Mock)",
       neighborhood: "Sé (Mock)",
@@ -511,12 +570,12 @@ export async function fetchAddressFromCep(cep: string): Promise<CepAddress | nul
     };
   }
   
+  // Fallback para outros CEPs não encontrados na simulação
+  console.warn(`CEP ${cleanedCep} não encontrado na simulação. Adicione-o ou use uma API real.`);
   return null; 
 }
 
-// --- Funções de Cupom (Básicas) ---
-// Em um sistema real, haveria uma UI de admin para gerenciar cupons.
-// Por agora, você pode adicionar cupons diretamente ao banco ou criar uma função de seed.
+// --- Funções de Cupom ---
 export async function getActiveCouponByCode(code: string): Promise<Coupon | null> {
     const coupon = await prisma.coupon.findUnique({
         where: { 
@@ -531,38 +590,49 @@ export async function getActiveCouponByCode(code: string): Promise<Coupon | null
 
     if (coupon) {
         if (coupon.usageLimit && coupon.timesUsed >= coupon.usageLimit) {
-            return null; // Limite de uso atingido
+            return null; 
         }
     }
-    return coupon ? toJSON(coupon) : null;
+    return coupon ? toJSONSafe(coupon) : null;
 }
 
 export async function createCoupon(data: Omit<PrismaCoupon, 'id' | 'createdAt' | 'updatedAt' | 'timesUsed' | 'orders'>): Promise<Coupon> {
     const coupon = await prisma.coupon.create({
         data: {
             ...data,
-            discountValue: new Decimal(data.discountValue)
+            discountValue: new Decimal(data.discountValue),
+            minOrderAmount: data.minOrderAmount ? new Decimal(data.minOrderAmount) : null,
         }
     });
-    return toJSON(coupon);
+    return toJSONSafe(coupon);
 }
 
-// Exemplo: Criar um cupom de teste se não existir (apenas para desenvolvimento)
 async function seedInitialCoupon() {
     const existingCoupon = await prisma.coupon.findUnique({ where: { code: 'PROMO10' } });
     if (!existingCoupon) {
-        await createCoupon({
-            code: 'PROMO10',
-            description: '10% de desconto na sua primeira compra!',
-            discountType: 'PERCENTAGE' as PrismaDiscountType,
-            discountValue: new Decimal(10),
-            isActive: true,
-            expiresAt: null, // Sem expiração
-            usageLimit: null, // Sem limite de uso geral
-            minOrderAmount: new Decimal(20.00) // Pedido mínimo de R$20
-        });
-        console.log("Cupom PROMO10 criado.");
+        try {
+            await createCoupon({
+                code: 'PROMO10',
+                description: '10% de desconto na sua primeira compra!',
+                discountType: PrismaDiscountType.PERCENTAGE,
+                discountValue: new Decimal(10),
+                isActive: true,
+                expiresAt: null, 
+                usageLimit: null, 
+                minOrderAmount: new Decimal(20.00) 
+            });
+            console.log("Cupom PROMO10 criado com sucesso.");
+        } catch (error) {
+            console.error("Falha ao criar cupom PROMO10:", error);
+        }
+    } else {
+        console.log("Cupom PROMO10 já existe.");
     }
 }
-// seedInitialCoupon(); // Chame isso uma vez ou em um script de seed dedicado
+// Chamar a função de seed para garantir que o cupom de teste exista (apenas para desenvolvimento)
+// Idealmente, isso seria parte de um script de seed do Prisma separado.
+// seedInitialCoupon(); // Descomente para rodar uma vez na inicialização do dev server
 
+// Garantir que todas as funções exportadas que retornam dados do Prisma usem toJSONSafe
+// onde a serialização é necessária para o cliente.
+// A maioria já está usando, mas é uma boa prática verificar.

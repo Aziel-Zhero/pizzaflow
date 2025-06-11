@@ -1,14 +1,14 @@
 
 "use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import AppHeader from '@/components/pizzaflow/AppHeader';
-import type { DashboardAnalyticsData, OrderStatus } from '@/lib/types'; // Removed unused DailyRevenue, OrdersByStatusData
+import type { DashboardAnalyticsData, OrderStatus } from '@/lib/types';
 import { getDashboardAnalytics, exportOrdersToCSV } from '@/app/actions';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { Loader2, Package, DollarSign, ListChecks, TrendingUp, Download, ClockIcon, TicketIcon } from 'lucide-react';
+import { Loader2, Package, DollarSign, ListChecks, TrendingUp, Download, ClockIcon, TicketIcon, RefreshCcw } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { ChartContainer, ChartTooltipContent } from '@/components/ui/chart';
 import type { ChartConfig } from '@/components/ui/chart';
@@ -16,13 +16,13 @@ import { Badge } from '@/components/ui/badge';
 import SplitText from '@/components/common/SplitText';
 
 const PIZZERIA_NAME = "Pizzaria Planeta";
+const AUTO_REFRESH_INTERVAL = 60000; // 60 segundos
 
-// Consistent with enums/types used in actions.ts
 const statusColorsForCharts: Record<OrderStatus, string> = {
   Pendente: "hsl(var(--chart-1))",
-  EmPreparo: "hsl(var(--chart-2))", // Changed from "Em Preparo"
-  AguardandoRetirada: "hsl(var(--chart-3))", // Changed from "Aguardando Retirada"
-  SaiuParaEntrega: "hsl(var(--chart-4))", // Changed from "Saiu para Entrega"
+  EmPreparo: "hsl(var(--chart-2))", 
+  AguardandoRetirada: "hsl(var(--chart-3))", 
+  SaiuParaEntrega: "hsl(var(--chart-4))", 
   Entregue: "hsl(var(--chart-5))",
   Cancelado: "hsl(var(--destructive))",
 };
@@ -49,21 +49,30 @@ export default function AnalyticsDashboardPage() {
   const [isExporting, setIsExporting] = useState(false);
   const { toast } = useToast();
 
-  useEffect(() => {
-    const fetchData = async () => {
-      setIsLoading(true);
-      try {
-        const data = await getDashboardAnalytics();
-        setAnalyticsData(data);
-      } catch (error) {
-        toast({ title: "Erro", description: "Falha ao buscar dados de análise.", variant: "destructive" });
-        console.error("Failed to fetch analytics:", error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    fetchData();
+  const fetchData = useCallback(async (showLoader = true) => {
+    if (showLoader) setIsLoading(true);
+    try {
+      // TODO: Implementar passagem de filtros de data no futuro
+      const data = await getDashboardAnalytics(); 
+      setAnalyticsData(data);
+    } catch (error) {
+      toast({ title: "Erro ao Carregar Dashboard", description: "Não foi possível buscar os dados de análise. Verifique o console.", variant: "destructive" });
+      console.error("Failed to fetch analytics:", error);
+      setAnalyticsData(null); // Limpa para evitar mostrar dados antigos ou quebrados
+    } finally {
+      if (showLoader) setIsLoading(false);
+    }
   }, [toast]);
+
+  useEffect(() => {
+    fetchData(true); // Fetch inicial
+    const intervalId = setInterval(() => fetchData(false), AUTO_REFRESH_INTERVAL); // Auto-refresh
+    return () => clearInterval(intervalId);
+  }, [fetchData]);
+
+  const handleManualRefresh = () => {
+    fetchData(true); // Fetch com loader
+  };
 
   const handleExportCSV = async () => {
     setIsExporting(true);
@@ -98,7 +107,7 @@ export default function AnalyticsDashboardPage() {
   };
 
 
-  if (isLoading) {
+  if (isLoading && !analyticsData) { // Mostra loader apenas se não houver dados antigos para exibir
     return (
       <div className="flex flex-col min-h-screen">
         <AppHeader appName={PIZZERIA_NAME} />
@@ -115,7 +124,13 @@ export default function AnalyticsDashboardPage() {
       <div className="flex flex-col min-h-screen">
         <AppHeader appName={PIZZERIA_NAME} />
         <main className="flex-grow container mx-auto px-4 py-8">
-          <p className="text-center text-muted-foreground">Não foi possível carregar os dados de análise.</p>
+          <p className="text-center text-muted-foreground">Não foi possível carregar os dados de análise. Tente atualizar.</p>
+           <div className="text-center mt-4">
+            <Button onClick={handleManualRefresh} variant="outline" disabled={isLoading}>
+              <RefreshCcw className={`mr-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+              Atualizar Dados
+            </Button>
+          </div>
         </main>
       </div>
     );
@@ -127,17 +142,23 @@ export default function AnalyticsDashboardPage() {
     <div className="flex flex-col min-h-screen bg-background">
       <AppHeader appName={PIZZERIA_NAME} />
       <main className="flex-grow container mx-auto px-2 sm:px-4 py-6">
-         <div className="flex justify-between items-center mb-8">
+         <div className="flex flex-wrap justify-between items-center mb-8 gap-2">
             <SplitText 
                 text="Dashboard de Análises" 
                 as="h1" 
                 className="text-3xl font-headline font-bold text-primary"
                 textAlign='left'
             />
-            <Button onClick={handleExportCSV} disabled={isExporting} variant="outline">
-                {isExporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
-                {isExporting ? "Exportando..." : "Exportar Pedidos (CSV)"}
-            </Button>
+            <div className="flex gap-2">
+                <Button onClick={handleManualRefresh} variant="outline" size="sm" disabled={isLoading}>
+                    <RefreshCcw className={`mr-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+                    {isLoading ? "Atualizando..." : "Atualizar"}
+                </Button>
+                <Button onClick={handleExportCSV} disabled={isExporting} variant="outline" size="sm">
+                    {isExporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+                    {isExporting ? "Exportando..." : "Exportar (CSV)"}
+                </Button>
+            </div>
          </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6 mb-8">
@@ -204,21 +225,25 @@ export default function AnalyticsDashboardPage() {
               <CardDescription>Visualização da receita gerada por dia.</CardDescription>
             </CardHeader>
             <CardContent className="h-[350px] w-full">
-              <ChartContainer config={chartConfigDailyRevenue} className="h-full w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={analyticsData.dailyRevenue} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="name" tickLine={false} axisLine={false} fontSize={12} />
-                    <YAxis tickFormatter={(value) => `R$${value}`} tickLine={false} axisLine={false} fontSize={12} width={70} />
-                    <RechartsTooltip 
-                      cursor={{ fill: 'hsl(var(--muted))' }}
-                      content={<ChartTooltipContent indicator="dot" />}
-                      formatter={(value: number) => [formatCurrency(value), "Receita"]}
-                    />
-                    <Bar dataKey="Receita" fill="var(--color-Receita)" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </ChartContainer>
+              {analyticsData.dailyRevenue.length > 0 ? (
+                <ChartContainer config={chartConfigDailyRevenue} className="h-full w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={analyticsData.dailyRevenue} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                      <XAxis dataKey="name" tickLine={false} axisLine={false} fontSize={12} />
+                      <YAxis tickFormatter={(value) => `R$${value}`} tickLine={false} axisLine={false} fontSize={12} width={70} />
+                      <RechartsTooltip 
+                        cursor={{ fill: 'hsl(var(--muted))' }}
+                        content={<ChartTooltipContent indicator="dot" />}
+                        formatter={(value: number) => [formatCurrency(value), "Receita"]}
+                      />
+                      <Bar dataKey="Receita" fill="var(--color-Receita)" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </ChartContainer>
+              ) : (
+                <p className="text-muted-foreground text-center py-10">Nenhuma receita nos últimos 7 dias para exibir.</p>
+              )}
             </CardContent>
           </Card>
           
@@ -228,48 +253,52 @@ export default function AnalyticsDashboardPage() {
               <CardDescription>Como os pedidos estão distribuídos por status.</CardDescription>
             </CardHeader>
             <CardContent className="h-[350px] w-full flex items-center justify-center">
-               <ChartContainer config={chartConfigOrderStatus} className="h-full w-full aspect-square">
-                 <ResponsiveContainer width="100%" height="100%">
-                    <PieChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
-                      <RechartsTooltip 
-                         cursor={{ stroke: 'hsl(var(--border))', strokeWidth: 1 }}
-                         content={<ChartTooltipContent hideLabel nameKey="name" />}
-                      />
-                      <Pie
-                        data={analyticsData.ordersByStatus}
-                        dataKey="value"
-                        nameKey="name"
-                        cx="50%"
-                        cy="50%"
-                        outerRadius={100} 
-                        innerRadius={40} 
-                        labelLine={true} 
-                        label={({ cx, cy, midAngle, outerRadius, percent, index, name, value }) => {
-                          const RADIAN = Math.PI / 180;
-                          const radius = outerRadius + 15; 
-                          const x = cx + radius * Math.cos(-midAngle * RADIAN);
-                          const y = cy + radius * Math.sin(-midAngle * RADIAN);
-                          return (
-                            <text
-                              x={x}
-                              y={y}
-                              fill="hsl(var(--foreground))"
-                              textAnchor={x > cx ? 'start' : 'end'}
-                              dominantBaseline="central"
-                              fontSize={11}
-                            >
-                              {`${name} (${value})`}
-                            </text>
-                          );
-                        }}
-                      >
-                        {analyticsData.ordersByStatus.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry.fill} stroke={entry.fill} />
-                        ))}
-                      </Pie>
-                    </PieChart>
-                  </ResponsiveContainer>
-               </ChartContainer>
+              {analyticsData.ordersByStatus.length > 0 ? (
+                 <ChartContainer config={chartConfigOrderStatus} className="h-full w-full aspect-square">
+                   <ResponsiveContainer width="100%" height="100%">
+                      <PieChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+                        <RechartsTooltip 
+                           cursor={{ stroke: 'hsl(var(--border))', strokeWidth: 1 }}
+                           content={<ChartTooltipContent hideLabel nameKey="name" />}
+                        />
+                        <Pie
+                          data={analyticsData.ordersByStatus}
+                          dataKey="value"
+                          nameKey="name"
+                          cx="50%"
+                          cy="50%"
+                          outerRadius={100} 
+                          innerRadius={40} 
+                          labelLine={true} 
+                          label={({ cx, cy, midAngle, outerRadius, percent, index, name, value }) => {
+                            const RADIAN = Math.PI / 180;
+                            const radius = outerRadius + 15; 
+                            const x = cx + radius * Math.cos(-midAngle * RADIAN);
+                            const y = cy + radius * Math.sin(-midAngle * RADIAN);
+                            return (
+                              <text
+                                x={x}
+                                y={y}
+                                fill="hsl(var(--foreground))"
+                                textAnchor={x > cx ? 'start' : 'end'}
+                                dominantBaseline="central"
+                                fontSize={11}
+                              >
+                                {`${name} (${value})`}
+                              </text>
+                            );
+                          }}
+                        >
+                          {analyticsData.ordersByStatus.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.fill} stroke={entry.fill} />
+                          ))}
+                        </Pie>
+                      </PieChart>
+                    </ResponsiveContainer>
+                 </ChartContainer>
+              ) : (
+                 <p className="text-muted-foreground text-center py-10">Nenhum pedido para exibir a distribuição de status.</p>
+              )}
             </CardContent>
           </Card>
 

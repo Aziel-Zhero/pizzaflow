@@ -6,9 +6,10 @@ import {
   varchar,
   boolean,
   timestamp,
-  serial,
+  serial, // Para usar com sequências se necessário diretamente na definição da coluna
   integer,
   pgEnum,
+  pgSchema, // Para definir sequências em um schema específico se não for public
 } from 'drizzle-orm/pg-core';
 import crypto from 'crypto'; // For UUID generation
 
@@ -17,6 +18,10 @@ export const orderStatusEnum = pgEnum('order_status', ["Pendente", "EmPreparo", 
 export const paymentTypeEnum = pgEnum('payment_type', ["Dinheiro", "Cartao", "Online"]);
 export const paymentStatusEnum = pgEnum('payment_status', ["Pendente", "Pago"]);
 export const discountTypeEnum = pgEnum('discount_type', ["PERCENTAGE", "FIXED_AMOUNT"]);
+
+// Sequência para order display ID
+export const orderDisplayIdSequence = pgSchema("public").sequence("order_display_id_seq").increment(1).min(1).start(1);
+
 
 // Tables
 export const menuItems = pgTable('menu_items', {
@@ -33,7 +38,8 @@ export const menuItems = pgTable('menu_items', {
 });
 
 export const orders = pgTable('orders', {
-  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()), // UUID, chave primária real
+  displayId: varchar('display_id', {length: 50}), // Ex: P0001, P0002. Pode ser unique.
   customerName: varchar('customer_name', { length: 255 }).notNull(),
   customerAddress: text('customer_address').notNull(),
   customerCep: varchar('customer_cep', { length: 20 }),
@@ -44,7 +50,8 @@ export const orders = pgTable('orders', {
   updatedAt: timestamp('updated_at', { mode: 'date', withTimezone: true }).defaultNow().notNull().$onUpdate(() => new Date()),
   deliveredAt: timestamp('delivered_at', { mode: 'date', withTimezone: true }),
   estimatedDeliveryTime: varchar('estimated_delivery_time', { length: 100 }), // Could be timestamp if precise
-  deliveryPerson: varchar('delivery_person', { length: 255 }),
+  deliveryPerson: varchar('delivery_person', { length: 255 }), // Manter por agora, para não quebrar UI existente. Será substituído.
+  deliveryPersonId: text('delivery_person_id').references(() => deliveryPersons.id, { onDelete: 'set null' }), // FK para a nova tabela
   paymentType: paymentTypeEnum('payment_type'),
   paymentStatus: paymentStatusEnum('payment_status').default('Pendente').notNull(),
   notes: text('notes'),
@@ -80,16 +87,31 @@ export const coupons = pgTable('coupons', {
   updatedAt: timestamp('updated_at', { mode: 'date', withTimezone: true }).defaultNow().notNull().$onUpdate(() => new Date()),
 });
 
+export const deliveryPersons = pgTable('delivery_persons', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  name: varchar('name', { length: 255 }).notNull(),
+  vehicleDetails: varchar('vehicle_details', { length: 255 }), // Ex: "Moto Honda CG 160 Vermelha"
+  licensePlate: varchar('license_plate', { length: 20 }), // Ex: "BRA1P00"
+  isActive: boolean('is_active').default(true).notNull(),
+  createdAt: timestamp('created_at', { mode: 'date', withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { mode: 'date', withTimezone: true }).defaultNow().notNull().$onUpdate(() => new Date()),
+});
+
+
 // Relations
 export const menuItemRelations = relations(menuItems, ({ many }) => ({
   orderItems: many(orderItems),
 }));
 
 export const orderRelations = relations(orders, ({ many, one }) => ({
-  items: many(orderItems),
+  items: many(orderItems, { relationName: 'orderToOrderItems' }), // Explicit relation name
   coupon: one(coupons, {
     fields: [orders.couponId],
     references: [coupons.id],
+  }),
+  deliveryPersonAssigned: one(deliveryPersons, { // Nome da relação para o entregador
+    fields: [orders.deliveryPersonId],
+    references: [deliveryPersons.id],
   }),
 }));
 
@@ -97,6 +119,7 @@ export const orderItemRelations = relations(orderItems, ({ one }) => ({
   order: one(orders, {
     fields: [orderItems.orderId],
     references: [orders.id],
+    relationName: 'orderToOrderItems', // Explicit relation name
   }),
   menuItem: one(menuItems, {
     fields: [orderItems.menuItemId],
@@ -108,12 +131,20 @@ export const couponRelations = relations(coupons, ({ many }) => ({
   orders: many(orders),
 }));
 
+export const deliveryPersonRelations = relations(deliveryPersons, ({ many }) => ({
+  orders: many(orders), // Pedidos atribuídos a este entregador
+}));
+
+
 // Export all schemas for Drizzle to use
 export const schema = {
   menuItems,
   orders,
   orderItems,
   coupons,
+  deliveryPersons, // Adicionada tabela de entregadores
+  orderDisplayIdSequence, // Adicionada a sequência
+  // Enums
   orderStatusEnum,
   paymentTypeEnum,
   paymentStatusEnum,
@@ -123,4 +154,5 @@ export const schema = {
   orderRelations,
   orderItemRelations,
   couponRelations,
+  deliveryPersonRelations, // Adicionadas relações de entregadores
 };

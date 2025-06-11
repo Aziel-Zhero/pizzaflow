@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import AppHeader from '@/components/pizzaflow/AppHeader';
 import type { Order, OrderStatus, Coupon } from '@/lib/types';
@@ -15,7 +15,7 @@ import { Progress } from '@/components/ui/progress';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
-import Confetti from 'react-confetti'; // Assuming you'd install this: npm install react-confetti
+import Confetti from 'react-confetti'; 
 
 const PIZZERIA_NAME = "Pizzaria Planeta";
 
@@ -87,7 +87,7 @@ const statusDetails: Record<OrderStatus, {
 export default function OrderStatusPage() {
   const params = useParams();
   const router = useRouter();
-  const orderId = typeof params.id === 'string' ? params.id : null;
+  const orderIdFromParam = typeof params.id === 'string' ? params.id : null;
   const [order, setOrder] = useState<Order | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
@@ -104,12 +104,12 @@ export default function OrderStatusPage() {
       });
     }
     window.addEventListener('resize', handleResize);
-    handleResize(); // Set initial size
+    handleResize(); 
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  const fetchOrderDetails = async (showLoadingSpinner = true) => {
-    if (!orderId) {
+  const fetchOrderDetails = useCallback(async (showLoadingSpinner = true) => {
+    if (!orderIdFromParam) {
         toast({ title: "Erro", description: "ID do pedido inválido.", variant: "destructive" });
         setIsLoading(false);
         router.push('/'); 
@@ -117,16 +117,16 @@ export default function OrderStatusPage() {
     }
     if (showLoadingSpinner) setIsLoading(true);
     try {
-      const fetchedOrder = await getOrderById(orderId);
+      const fetchedOrder = await getOrderById(orderIdFromParam); // Passa o ID da URL
       if (fetchedOrder) {
         setOrder(fetchedOrder);
         setLastUpdated(new Date());
         if (fetchedOrder.status === 'Entregue' && !showConfetti) {
             setShowConfetti(true);
-            setTimeout(() => setShowConfetti(false), 7000); // Confetti for 7 seconds
+            setTimeout(() => setShowConfetti(false), 7000); 
         }
       } else {
-        toast({ title: "Pedido não encontrado", description: `Não foi possível encontrar o pedido ${orderId}.`, variant: "destructive" });
+        toast({ title: "Pedido não encontrado", description: `Não foi possível encontrar o pedido ${orderIdFromParam}.`, variant: "destructive" });
         setOrder(null); 
       }
     } catch (error) {
@@ -134,11 +134,11 @@ export default function OrderStatusPage() {
     } finally {
       if (showLoadingSpinner) setIsLoading(false);
     }
-  };
+  }, [orderIdFromParam, router, toast, showConfetti]);
 
   useEffect(() => {
     fetchOrderDetails();
-  }, [orderId]); 
+  }, [fetchOrderDetails]); 
 
   useEffect(() => {
     if (!order || order.status === 'Entregue' || order.status === 'Cancelado') {
@@ -149,7 +149,7 @@ export default function OrderStatusPage() {
     }, 20000); 
 
     return () => clearInterval(intervalId);
-  }, [order, orderId]);
+  }, [order, fetchOrderDetails]);
 
   const currentStatusInfo = order ? statusDetails[order.status] : statusDetails.Pendente;
   const { Icon, message, progress, details, colorClass, iconColorClass, charismaticMessage, finalMessage } = currentStatusInfo;
@@ -186,6 +186,8 @@ export default function OrderStatusPage() {
     order.status === 'SaiuParaEntrega' ? "bg-purple-500" :
     order.status === 'AguardandoRetirada' ? "bg-orange-500" :
     order.status === 'EmPreparo' ? "bg-blue-500" : "bg-yellow-500";
+  
+  const displayOrderId = order.displayId || order.id;
 
 
   return (
@@ -194,7 +196,7 @@ export default function OrderStatusPage() {
       <AppHeader appName={PIZZERIA_NAME} />
       <main className="flex-grow container mx-auto px-4 py-8 flex flex-col items-center">
         <SplitText
-          text={`Status do Pedido: ${order.id}`}
+          text={`Status do Pedido: ${displayOrderId}`}
           as="h1"
           className="text-3xl font-headline font-bold text-primary mb-6 text-center"
           textAlign='center'
@@ -216,7 +218,6 @@ export default function OrderStatusPage() {
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="space-y-2">
-                <Progress value={progress} className="w-full h-3 transition-all duration-500" />
                  <div className="w-full h-3 rounded-full bg-muted overflow-hidden">
                     <div
                         className={cn("h-full transition-all duration-1000 ease-out", progressColorClass)}
@@ -266,7 +267,7 @@ export default function OrderStatusPage() {
                     Obrigado! Fazer Novo Pedido
                 </Button>
             ) : (
-                <Button onClick={() => fetchOrderDetails(true)} variant="outline" disabled={isLoading}>
+                <Button onClick={() => fetchOrderDetails(true)} variant="outline" disabled={isLoading && order === null}> {/* Correção: isLoading apenas quando order é null */}
                 <RefreshCw className={`mr-2 h-4 w-4 ${isLoading && order === null ? 'animate-spin' : ''}`} />
                 Atualizar Status
                 </Button>

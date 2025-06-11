@@ -32,10 +32,13 @@ export interface Coupon {
   usageLimit?: number;
   timesUsed: number;
   minOrderAmount?: number;
+  // Relação não populada por padrão na maioria das buscas, mas útil para tipos
+  orders?: Order[]; 
 }
 
 export interface Order {
-  id: string;
+  id: string; // UUID - Chave primária real
+  displayId?: string; // ID sequencial amigável para exibição (ex: P0001)
   customerName: string;
   customerAddress: string;
   customerCep?: string;
@@ -47,7 +50,8 @@ export interface Order {
   updatedAt?: string;
   deliveredAt?: string;
   estimatedDeliveryTime?: string;
-  deliveryPerson?: string;
+  deliveryPerson?: string; // Manter por enquanto, será substituído por deliveryPersonId
+  deliveryPersonId?: string | null; // Futuro: FK para a tabela deliveryPersons
   paymentType?: PaymentType | null; // Prisma enum will be mapped
   paymentStatus: PaymentStatus; // Prisma enum will be mapped
   notes?: string;
@@ -63,15 +67,15 @@ export interface Order {
 export const PIZZERIA_ADDRESS = "Pizzaria Planeta - Central, Av. Sabores Celestiais 123, Cidade Astral, CA 45678";
 
 export interface DailyRevenue {
-  date: string; 
-  name: string; 
+  date: string; // Format YYYY-MM-DD or user-friendly like DD/MM
+  name: string; // User-friendly date for chart label
   Receita: number;
 }
 
 export interface OrdersByStatusData {
   name: OrderStatus; 
   value: number; 
-  fill: string; 
+  fill: string; // Cor para o gráfico
 }
 
 export interface TimeEstimateData {
@@ -90,7 +94,7 @@ export interface DashboardAnalyticsData {
   ordersByStatus: OrdersByStatusData[];
   dailyRevenue: DailyRevenue[];
   timeEstimates: TimeEstimateData;
-  couponUsage?: CouponUsageData;
+  couponUsage: CouponUsageData; // Tornar não opcional, sempre terá valores (mesmo que 0)
 }
 
 export interface MenuItem {
@@ -128,15 +132,25 @@ export interface NewOrderClientData {
 }
 
 export interface CepAddress {
+  cep?: string; // Adicionado para consistência com o retorno da API Brasil
   street: string;
   neighborhood: string;
   city: string;
   state: string;
   fullAddress?: string; 
+  // Campos da BrasilAPI V2
+  location?: {
+    type: string;
+    coordinates?: {
+        longitude?: string;
+        latitude?: string;
+    }
+  }
+  service?: string;
 }
 
 export interface MultiStopOrderInfo {
-  orderId: string;
+  orderId: string; // Continuará usando o UUID interno
   customerAddress: string;
 }
 
@@ -146,7 +160,7 @@ export interface OptimizeMultiDeliveryRouteInput {
 }
 
 export interface OptimizedRouteLeg {
-  orderIds: string[]; 
+  orderIds: string[]; // Continuará usando os UUIDs internos
   description: string; 
   googleMapsUrl: string; 
 }
@@ -162,4 +176,17 @@ export interface OptimizeDeliveryRouteInput {
 
 export interface OptimizeDeliveryRouteOutput {
   optimizedRoute: string; // URL
+}
+
+
+// Tipos para Entregadores
+export interface DeliveryPerson {
+  id: string;
+  name: string;
+  vehicleDetails?: string | null;
+  licensePlate?: string | null;
+  isActive: boolean;
+  createdAt: string; // ISO string
+  updatedAt: string; // ISO string
+  // orders?: Order[]; // Relação se necessário
 }

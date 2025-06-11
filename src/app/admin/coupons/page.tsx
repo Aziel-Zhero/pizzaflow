@@ -1,61 +1,169 @@
 
 "use client";
 
-// Esta é uma página placeholder para Gerenciamento de Cupons.
-// A funcionalidade completa (criar, editar, deletar cupons) via UI
-// seria uma adição futura. Por enquanto, cupons podem ser semeados
-// ou gerenciados diretamente no banco de dados.
-
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import AppHeader from '@/components/pizzaflow/AppHeader';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge'; // Added import
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog';
+import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Ticket, PlusCircle } from 'lucide-react';
+import { Loader2, Ticket, PlusCircle, Edit3, Trash2 } from 'lucide-react';
 import SplitText from '@/components/common/SplitText';
-// import { prisma } from '@/lib/db'; // Não podemos usar prisma client diretamente no client component
-// import type { Coupon } from '@/lib/types'; // Usaremos uma chamada de action no futuro
+import type { Coupon, DiscountType } from '@/lib/types';
+import { getAllCoupons, createCoupon } from '@/app/actions'; // Assumindo que teremos update e delete
+import { format, parseISO, isValid } from 'date-fns';
 
 const PIZZERIA_NAME = "Pizzaria Planeta";
 
-// Mock de como os cupons poderiam ser buscados no futuro
-async function getCouponsMock(): Promise<any[]> {
-    // Em um app real, isso chamaria uma server action: await getAllCoupons();
-    await new Promise(resolve => setTimeout(resolve, 500));
-    return [
-        { id: '1', code: 'PROMO10', description: '10% de desconto', discountType: 'PERCENTAGE', discountValue: 10, isActive: true, timesUsed: 5 },
-        { id: '2', code: 'FRETEGRATIS', description: 'Frete Grátis', discountType: 'FIXED_AMOUNT', discountValue: 10, isActive: true, timesUsed: 2, minOrderAmount: 30 },
-        { id: '3', code: 'VOLTESEMPRE15', description: '15% para próxima compra', discountType: 'PERCENTAGE', discountValue: 15, isActive: false, expiresAt: new Date().toISOString() },
-    ];
-}
-
+const initialCouponFormState: Omit<Coupon, 'id' | 'createdAt' | 'updatedAt' | 'timesUsed' | 'orders'> = {
+  code: '',
+  description: '',
+  discountType: 'PERCENTAGE',
+  discountValue: 0,
+  isActive: true,
+  expiresAt: undefined, // String ISO ou undefined
+  usageLimit: undefined,
+  minOrderAmount: undefined,
+};
 
 export default function CouponManagementPage() {
-  const [coupons, setCoupons] = useState<any[]>([]);
+  const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [currentCoupon, setCurrentCoupon] = useState<typeof initialCouponFormState & {price?: string}>({...initialCouponFormState, discountValue: 0}); // discountValue como number
+  const [isEditing, setIsEditing] = useState(false);
   const { toast } = useToast();
 
-  const fetchCoupons = async () => {
+  const fetchCoupons = useCallback(async () => {
     setIsLoading(true);
     try {
-      // Futuramente: const fetchedCoupons = await getAllCouponsAction();
-      const fetchedCoupons = await getCouponsMock();
+      const fetchedCoupons = await getAllCoupons();
       setCoupons(fetchedCoupons);
     } catch (error) {
       toast({ title: "Erro", description: "Falha ao carregar cupons.", variant: "destructive" });
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [toast]);
 
   useEffect(() => {
     fetchCoupons();
-  }, []);
+  }, [fetchCoupons]);
 
-  const handleAddNewCoupon = () => {
-      toast({ title: "Funcionalidade Futura", description: "A criação de cupons via interface será implementada em breve. Por enquanto, gerencie via banco de dados."});
-      // Lógica para abrir modal de criação de cupom
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
+    let processedValue: string | number = value;
+    if (name === 'discountValue' || name === 'usageLimit' || name === 'minOrderAmount') {
+        processedValue = value === '' ? '' : parseFloat(value.replace(',', '.')) || 0;
+        if (name === 'usageLimit' && Number(processedValue) < 0) processedValue = 0;
+    }
+    setCurrentCoupon(prev => ({ ...prev, [name]: processedValue }));
+  };
+  
+  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target; // value é 'yyyy-MM-dd'
+    if (value) {
+        // Adiciona T00:00:00.000Z para garantir que é o início do dia em UTC
+        const dateObj = parseISO(value + "T00:00:00.000Z"); 
+        if(isValid(dateObj)) {
+            setCurrentCoupon(prev => ({ ...prev, [name]: dateObj.toISOString() }));
+        } else {
+            setCurrentCoupon(prev => ({ ...prev, [name]: undefined }));
+        }
+    } else {
+        setCurrentCoupon(prev => ({ ...prev, [name]: undefined }));
+    }
+  };
+
+
+  const handleCheckboxChange = (checked: boolean | "indeterminate") => {
+     setCurrentCoupon(prev => ({ ...prev, isActive: Boolean(checked) }));
+  };
+
+  const handleSelectChange = (value: string) => {
+    setCurrentCoupon(prev => ({ ...prev, discountType: value as DiscountType }));
+  };
+
+  const handleOpenForm = (coupon?: Coupon) => {
+    if (coupon) {
+      // Formatar expiresAt para 'yyyy-MM-dd' para o input type="date"
+      const expiresAtForInput = coupon.expiresAt ? format(parseISO(coupon.expiresAt), 'yyyy-MM-dd') : '';
+      setCurrentCoupon({
+        ...coupon,
+        expiresAt: expiresAtForInput, // Armazena como string no formato do input date
+        discountValue: Number(coupon.discountValue), // Garantir que é number
+        usageLimit: coupon.usageLimit ?? undefined,
+        minOrderAmount: coupon.minOrderAmount ?? undefined,
+      });
+      setIsEditing(true);
+    } else {
+      setCurrentCoupon({...initialCouponFormState, discountValue: 0});
+      setIsEditing(false);
+    }
+    setIsFormOpen(true);
+  };
+  
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentCoupon.code || !currentCoupon.discountType || currentCoupon.discountValue <= 0) {
+        toast({ title: "Campos Obrigatórios", description: "Código, tipo e valor do desconto (maior que zero) são obrigatórios.", variant: "destructive" });
+        return;
+    }
+    
+    setIsSubmitting(true);
+    
+    // Converter expiresAt de volta para ISO string completa se houver valor, ou null/undefined
+    let finalExpiresAt = currentCoupon.expiresAt;
+    if (currentCoupon.expiresAt && typeof currentCoupon.expiresAt === 'string' && currentCoupon.expiresAt.match(/^\d{4}-\d{2}-\d{2}$/)) {
+        finalExpiresAt = parseISO(currentCoupon.expiresAt + "T23:59:59.999Z").toISOString(); // Fim do dia selecionado em UTC
+    } else if (!currentCoupon.expiresAt) {
+        finalExpiresAt = undefined;
+    }
+
+
+    const couponDataForApi = {
+        ...currentCoupon,
+        discountValue: Number(currentCoupon.discountValue),
+        usageLimit: currentCoupon.usageLimit ? Number(currentCoupon.usageLimit) : undefined,
+        minOrderAmount: currentCoupon.minOrderAmount ? Number(currentCoupon.minOrderAmount) : undefined,
+        expiresAt: finalExpiresAt,
+    };
+
+
+    try {
+      // A action `createCoupon` foi melhorada e pode ser usada.
+      // Futuramente, teríamos uma action `updateCoupon`. Por ora, a criação já deve funcionar.
+      if (isEditing) {
+        toast({ title: "Edição Futura", description: "A edição de cupons será implementada em breve.", variant: "default" });
+        // await updateCouponAction(currentCoupon.id, couponDataForApi); 
+      } else {
+        await createCoupon(couponDataForApi);
+        toast({ title: "Sucesso!", description: `Cupom "${couponDataForApi.code}" criado.`, variant: "default" });
+      }
+      fetchCoupons();
+      setIsFormOpen(false);
+    } catch (error) {
+        const errorMsg = (error as Error).message.toLowerCase();
+        if (errorMsg.includes("unique constraint") && errorMsg.includes("code")) {
+             toast({ title: "Erro ao Salvar", description: `O código de cupom "${couponDataForApi.code}" já existe. Tente outro.`, variant: "destructive" });
+        } else {
+            toast({ title: "Erro ao Salvar", description: `Falha ao salvar cupom. ${(error as Error).message}`, variant: "destructive" });
+        }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteCoupon = (couponId: string) => {
+      toast({ title: "Funcionalidade Futura", description: `A exclusão do cupom ${couponId} será implementada.` });
+      // Lógica para deletar cupom (chamar action)
   };
 
   return (
@@ -69,7 +177,7 @@ export default function CouponManagementPage() {
             className="text-3xl font-headline font-bold text-primary"
             textAlign='left'
           />
-          <Button onClick={handleAddNewCoupon}>
+          <Button onClick={() => handleOpenForm()}>
             <PlusCircle className="mr-2 h-4 w-4" /> Adicionar Novo Cupom
           </Button>
         </div>
@@ -84,35 +192,114 @@ export default function CouponManagementPage() {
                 <Ticket className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
                 <h2 className="text-xl font-semibold mb-2">Nenhum cupom cadastrado!</h2>
                 <p className="text-muted-foreground mb-4">Comece adicionando cupons para suas promoções.</p>
-                <Button onClick={handleAddNewCoupon}>
+                <Button onClick={() => handleOpenForm()}>
                     <PlusCircle className="mr-2 h-4 w-4" /> Adicionar Primeiro Cupom
                 </Button>
             </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {coupons.map(coupon => (
-              <Card key={coupon.id} className="shadow-lg">
+              <Card key={coupon.id} className="shadow-lg flex flex-col">
                 <CardHeader>
                   <CardTitle className="flex items-center justify-between">
-                    <span>{coupon.code}</span>
-                    <Badge variant={coupon.isActive ? 'default' : 'destructive'}>
-                      {coupon.isActive ? 'Ativo' : 'Inativo'}
+                    <span className="font-mono">{coupon.code}</span>
+                    <Badge variant={coupon.isActive ? 'default' : 'destructive'} className={coupon.isActive && coupon.expiresAt && isFuture(parseISO(coupon.expiresAt)) ? '' : coupon.isActive && coupon.expiresAt && !isFuture(parseISO(coupon.expiresAt)) ? 'bg-yellow-500' : ''}>
+                      {coupon.isActive ? (coupon.expiresAt && !isFuture(parseISO(coupon.expiresAt)) ? 'Expirado' : 'Ativo') : 'Inativo'}
                     </Badge>
                   </CardTitle>
-                  <CardDescription>{coupon.description || 'Sem descrição'}</CardDescription>
+                  <CardDescription className="h-10 overflow-hidden text-ellipsis">{coupon.description || 'Sem descrição'}</CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-1 text-sm">
+                <CardContent className="space-y-1 text-sm flex-grow">
                   <p><strong>Tipo:</strong> {coupon.discountType === 'PERCENTAGE' ? 'Porcentagem' : 'Valor Fixo'}</p>
-                  <p><strong>Valor:</strong> {coupon.discountType === 'PERCENTAGE' ? `${coupon.discountValue}%` : `R$ ${Number(coupon.discountValue).toFixed(2).replace('.', ',')}`}</p>
-                  {coupon.minOrderAmount && <p><strong>Pedido Mínimo:</strong> R$ {Number(coupon.minOrderAmount).toFixed(2).replace('.', ',')}</p>}
-                  <p><strong>Usos:</strong> {coupon.timesUsed} {coupon.usageLimit ? `/ ${coupon.usageLimit}` : ''}</p>
-                  {coupon.expiresAt && <p><strong>Expira em:</strong> {new Date(coupon.expiresAt).toLocaleDateString('pt-BR')}</p>}
+                  <p><strong>Valor:</strong> {coupon.discountType === 'PERCENTAGE' ? `${Number(coupon.discountValue)}%` : `R$ ${Number(coupon.discountValue).toFixed(2).replace('.', ',')}`}</p>
+                  {coupon.minOrderAmount && <p><strong>Pedido Mín.:</strong> R$ {Number(coupon.minOrderAmount).toFixed(2).replace('.', ',')}</p>}
+                  <p><strong>Usos:</strong> {coupon.timesUsed} {coupon.usageLimit ? `/ ${coupon.usageLimit}` : '(ilimitado)'}</p>
+                  {coupon.expiresAt && <p><strong>Expira em:</strong> {format(parseISO(coupon.expiresAt), 'dd/MM/yyyy')}</p>}
                 </CardContent>
-                {/* Futuramente, adicionar botões de Editar/Desativar/Excluir */}
+                 <CardFooter className="gap-2 border-t pt-4">
+                    <Button variant="outline" size="sm" onClick={() => handleOpenForm(coupon)} className="flex-1" disabled>
+                        <Edit3 className="mr-2 h-4 w-4" /> Editar (Em breve)
+                    </Button>
+                    <Button variant="destructive" size="sm" onClick={() => handleDeleteCoupon(coupon.id)} className="flex-1" disabled>
+                        <Trash2 className="mr-2 h-4 w-4" /> Excluir (Em breve)
+                    </Button>
+                </CardFooter>
               </Card>
             ))}
           </div>
         )}
+
+        <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
+            <DialogContent className="sm:max-w-lg">
+                 <DialogHeader>
+                    <DialogTitle className="font-headline">{isEditing ? 'Editar Cupom' : 'Adicionar Novo Cupom'}</DialogTitle>
+                    <DialogDescription>
+                        {isEditing ? 'Modifique os detalhes do cupom.' : 'Preencha os detalhes do novo cupom.'}
+                    </DialogDescription>
+                </DialogHeader>
+                <form onSubmit={handleSubmit} className="grid gap-4 py-4">
+                    <div>
+                        <Label htmlFor="code">Código do Cupom (Ex: PROMO10, NATAL20)</Label>
+                        <Input id="code" name="code" value={currentCoupon.code} onChange={handleInputChange} required />
+                    </div>
+                    <div>
+                        <Label htmlFor="description">Descrição (opcional)</Label>
+                        <Textarea id="description" name="description" value={currentCoupon.description || ''} onChange={handleInputChange} />
+                    </div>
+                     <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <Label htmlFor="discountType">Tipo de Desconto</Label>
+                            <Select name="discountType" value={currentCoupon.discountType} onValueChange={handleSelectChange} required>
+                                <SelectTrigger id="discountType"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="PERCENTAGE">Porcentagem (%)</SelectItem>
+                                    <SelectItem value="FIXED_AMOUNT">Valor Fixo (R$)</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div>
+                            <Label htmlFor="discountValue">Valor do Desconto</Label>
+                            <Input id="discountValue" name="discountValue" type="number" min="0.01" step="0.01" 
+                                   value={currentCoupon.discountValue === 0 ? '' : String(currentCoupon.discountValue)} 
+                                   onChange={handleInputChange} required 
+                                   placeholder={currentCoupon.discountType === 'PERCENTAGE' ? 'Ex: 10 para 10%' : 'Ex: 5.50 para R$5,50'}/>
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <Label htmlFor="minOrderAmount">Valor Mínimo do Pedido (R$, opcional)</Label>
+                            <Input id="minOrderAmount" name="minOrderAmount" type="number" min="0" step="0.01" 
+                                   value={currentCoupon.minOrderAmount === undefined ? '' : String(currentCoupon.minOrderAmount)} 
+                                   onChange={handleInputChange} placeholder="Deixe em branco se não houver"/>
+                        </div>
+                        <div>
+                            <Label htmlFor="usageLimit">Limite de Usos (opcional)</Label>
+                            <Input id="usageLimit" name="usageLimit" type="number" min="0" step="1" 
+                                   value={currentCoupon.usageLimit === undefined ? '' : String(currentCoupon.usageLimit)} 
+                                   onChange={handleInputChange} placeholder="Deixe em branco para ilimitado"/>
+                        </div>
+                    </div>
+                     <div>
+                        <Label htmlFor="expiresAt">Data de Expiração (opcional)</Label>
+                        <Input id="expiresAt" name="expiresAt" type="date" 
+                               value={currentCoupon.expiresAt || ''} // Já deve estar no formato 'yyyy-MM-dd'
+                               onChange={handleDateChange} />
+                    </div>
+                    <div className="flex items-center space-x-2">
+                        <Checkbox id="isActive" checked={currentCoupon.isActive} onCheckedChange={handleCheckboxChange} />
+                        <Label htmlFor="isActive" className="text-sm font-medium">Ativar cupom imediatamente</Label>
+                    </div>
+                     <DialogFooter>
+                        <DialogClose asChild><Button type="button" variant="outline">Cancelar</Button></DialogClose>
+                        <Button type="submit" disabled={isSubmitting}>
+                            {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                            {isEditing ? 'Salvar Alterações' : 'Criar Cupom'}
+                        </Button>
+                    </DialogFooter>
+                </form>
+            </DialogContent>
+        </Dialog>
+
          <footer className="text-center py-6 border-t border-border text-sm text-muted-foreground mt-12">
           Pizza Planeta Flow &copy; {new Date().getFullYear()}
         </footer>
@@ -120,3 +307,4 @@ export default function CouponManagementPage() {
     </div>
   );
 }
+

@@ -1,7 +1,7 @@
 
 "use client";
 import type { FC } from 'react';
-import { Pizza, BarChart3, ListOrdered, PlusCircle, LayoutDashboard, Utensils, Moon, Sun, Ticket } from 'lucide-react';
+import { Pizza, BarChart3, ListOrdered, PlusCircle, LayoutDashboard, Utensils, Moon, Sun, Ticket, Bike } from 'lucide-react'; // Adicionado Bike
 import SplitText from '@/components/common/SplitText';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -86,7 +86,11 @@ const AppHeader: FC<AppHeaderProps> = ({ appName }) => {
                   <Ticket className="mr-2 h-4 w-4" /> Cupons
                 </Link>
               </DropdownMenuItem>
-              {/* Adicionar mais itens de admin aqui no futuro */}
+              <DropdownMenuItem asChild>
+                 <Link href="/admin/delivery-persons"> {/* Novo link */}
+                  <Bike className="mr-2 h-4 w-4" /> Entregadores
+                </Link>
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </nav>

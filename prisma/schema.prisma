@@ -1,3 +1,0 @@
-// Este arquivo não é mais necessário com Drizzle ORM.
-// O schema do banco de dados agora é definido em src/lib/schema.ts
-// Você pode remover este arquivo ou a pasta 'prisma' inteira se não houver outros arquivos nela.

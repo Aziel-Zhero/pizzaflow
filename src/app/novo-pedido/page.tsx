@@ -36,6 +36,9 @@ const formatCep = (value: string): string => {
   return `${cep.slice(0, 5)}-${cep.slice(5, 8)}`;
 };
 
+// Helper para verificar se uma string é uma Data URL
+const isDataUrl = (url: string | undefined): boolean => !!url && url.startsWith('data:image');
+
 
 export default function NewOrderPage() {
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
@@ -70,7 +73,8 @@ export default function NewOrderPage() {
         const items = await getAvailableMenuItems();
         setMenuItems(items);
       } catch (error) {
-        toast({ title: "Erro", description: "Falha ao carregar o cardápio.", variant: "destructive" });
+        toast({ title: "Erro", description: "Falha ao carregar o cardápio. Verifique se o banco de dados está configurado e as migrações aplicadas.", variant: "destructive" });
+        console.error("Erro ao carregar cardápio:", error);
       } finally {
         setIsLoadingMenu(false);
       }
@@ -94,13 +98,13 @@ export default function NewOrderPage() {
       if (addressResult && addressResult.fullAddress) {
         setCustomerAddress(addressResult.fullAddress);
         toast({ title: "Endereço Encontrado!", description: "Endereço preenchido com base no CEP.", variant: "default" });
-      } else if (addressResult) { // Se fullAddress não estiver presente, mas outros campos sim
+      } else if (addressResult) { 
          setCustomerAddress(`${addressResult.street || ''}, ${addressResult.neighborhood || ''}, ${addressResult.city || ''} - ${addressResult.state || ''}`);
          toast({ title: "Endereço Parcial", description: "Complete o número e complemento, se necessário.", variant: "default" });
       }
-      else { // Nenhum resultado ou resultado inválido
+      else { 
         toast({ title: "CEP não encontrado", description: "Não foi possível encontrar o endereço para este CEP. Por favor, digite manualmente.", variant: "destructive" });
-        setCustomerAddress(''); // Limpa o campo de endereço se o CEP não for encontrado
+        setCustomerAddress(''); 
       }
     } catch (error) {
       toast({ title: "Erro ao Buscar CEP", description: "Ocorreu um problema ao buscar o CEP.", variant: "destructive" });
@@ -243,7 +247,7 @@ export default function NewOrderPage() {
       const orderData: NewOrderClientData = {
         customerName,
         customerAddress,
-        customerCep: customerCep.replace(/\D/g, ''), // Envia CEP limpo
+        customerCep: customerCep.replace(/\D/g, ''), 
         customerReferencePoint,
         items: cart.map(ci => ({ 
             menuItemId: ci.menuItemId,
@@ -272,7 +276,7 @@ export default function NewOrderPage() {
       setCouponMessage(null);
     } catch (error) {
       console.error("Erro ao enviar pedido:", error);
-      toast({ title: "Erro ao Enviar Pedido", description: "Houve um problema ao registrar seu pedido. Verifique o console e tente novamente.", variant: "destructive" });
+      toast({ title: "Erro ao Enviar Pedido", description: `Houve um problema ao registrar seu pedido. Verifique o console. Erro: ${(error as Error).message}`, variant: "destructive" });
     } finally {
       setIsSubmitting(false);
     }
@@ -310,7 +314,7 @@ export default function NewOrderPage() {
                             value={customerCep} 
                             onChange={handleCepChange} 
                             placeholder="Ex: 12345-678" 
-                            maxLength={9} // 8 dígitos + traço
+                            maxLength={9} 
                         />
                     </div>
                     <Button type="button" onClick={handleCepSearch} disabled={isFetchingCep} className="w-full sm:w-auto">
@@ -366,7 +370,8 @@ export default function NewOrderPage() {
                                     layout="fill" 
                                     objectFit="cover" 
                                     className="rounded-t-md" 
-                                    data-ai-hint={item.dataAiHint || `${item.category === "Pizzas Salgadas" || item.category === "Pizzas Doces" ? "food pizza" : item.category === "Bebidas" ? "drink beverage" : "food item"}`}
+                                    data-ai-hint={isDataUrl(item.imageUrl) ? 'uploaded image' : (item.dataAiHint || "food item")}
+                                    unoptimized={isDataUrl(item.imageUrl)}
                                   />
                                 </div>
                               )}
@@ -409,7 +414,17 @@ export default function NewOrderPage() {
                       <div key={item.id} className="flex flex-col p-2 border rounded-md gap-1">
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
-                               {item.imageUrl && <Image src={item.imageUrl} alt={item.name} width={40} height={40} className="rounded-sm object-cover" data-ai-hint={item.dataAiHint || "food item"}/>}
+                               {item.imageUrl && 
+                                <Image 
+                                    src={item.imageUrl} 
+                                    alt={item.name} 
+                                    width={40} 
+                                    height={40} 
+                                    className="rounded-sm object-cover" 
+                                    data-ai-hint={isDataUrl(item.imageUrl) ? 'uploaded image' : (item.dataAiHint || "food item")}
+                                    unoptimized={isDataUrl(item.imageUrl)}
+                                />
+                               }
                                 <div>
                                     <p className="font-medium text-sm">{item.name}</p>
                                     <p className="text-xs text-muted-foreground">R$ {item.price.toFixed(2).replace('.', ',')} x {item.quantity}</p>

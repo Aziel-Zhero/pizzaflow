@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type ChangeEvent } from 'react';
 import AppHeader from '@/components/pizzaflow/AppHeader';
 import type { MenuItem } from '@/lib/types';
 import { getAvailableMenuItems, addMenuItem, updateMenuItem, deleteMenuItem } from '@/app/actions';
@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, PlusCircle, Edit3, Trash2, Image as ImageIcon, Utensils, Tag } from 'lucide-react';
+import { Loader2, PlusCircle, Edit3, Trash2, Image as ImageIcon, Utensils, Tag, UploadCloud } from 'lucide-react';
 import SplitText from '@/components/common/SplitText';
 import Image from 'next/image';
 
@@ -22,12 +22,12 @@ const PIZZERIA_NAME = "Pizzaria Planeta";
 
 const initialMenuItemFormState: Omit<MenuItem, 'id' | 'createdAt' | 'updatedAt' > = {
   name: '',
-  price: 0, // Será string no input, convertido para número no estado
+  price: 0, 
   category: '',
   description: '',
-  imageUrl: '',
+  imageUrl: '', // Continuará sendo string, mas pode conter Data URL
   isPromotion: false,
-  dataAiHint: '',
+  dataAiHint: '', // Mantido para caso o usuário queira usar URLs externas no futuro
 };
 
 export default function MenuManagementPage() {
@@ -35,11 +35,11 @@ export default function MenuManagementPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
-  // Usar string para preço no formulário para melhor UX, converter antes de enviar
   const [currentItem, setCurrentItem] = useState<Omit<MenuItem, 'id' | 'createdAt' | 'updatedAt' > & { price: string | number }>(
       {...initialMenuItemFormState, price: ''}
   );
   const [isEditing, setIsEditing] = useState(false);
+  const [imagePreview, setImagePreview] = useState<string | null>(null); // Para o preview da imagem selecionada
   const { toast } = useToast();
 
   const fetchMenuItems = async () => {
@@ -48,7 +48,8 @@ export default function MenuManagementPage() {
       const items = await getAvailableMenuItems();
       setMenuItems(items);
     } catch (error) {
-      toast({ title: "Erro", description: "Falha ao carregar o cardápio.", variant: "destructive" });
+      toast({ title: "Erro", description: "Falha ao carregar o cardápio. Verifique se as migrações do banco foram aplicadas.", variant: "destructive" });
+      console.error("Erro ao carregar cardápio:", error);
     } finally {
       setIsLoading(false);
     }
@@ -61,10 +62,35 @@ export default function MenuManagementPage() {
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     if (name === 'price') {
-      // Permite entrada decimal, mas mantém como string no estado do formulário
       setCurrentItem(prev => ({ ...prev, price: value }));
     } else {
       setCurrentItem(prev => ({ ...prev, [name]: value }));
+    }
+  };
+
+  const handleImageFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 2 * 1024 * 1024) { // Limite de 2MB para Data URLs
+        toast({ title: "Arquivo Muito Grande", description: "Por favor, selecione uma imagem menor que 2MB.", variant: "destructive"});
+        e.target.value = ""; // Limpa o input
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const result = reader.result as string;
+        setCurrentItem(prev => ({ ...prev, imageUrl: result, dataAiHint: 'uploaded image' }));
+        setImagePreview(result);
+      };
+      reader.onerror = () => {
+        toast({ title: "Erro ao Ler Imagem", description: "Não foi possível processar a imagem selecionada.", variant: "destructive"});
+        setImagePreview(null);
+        setCurrentItem(prev => ({ ...prev, imageUrl: '', dataAiHint: '' }));
+      }
+      reader.readAsDataURL(file);
+    } else {
+      setCurrentItem(prev => ({ ...prev, imageUrl: isEditing ? currentItem.imageUrl || '' : '', dataAiHint: isEditing ? currentItem.dataAiHint || '' : '' }));
+      setImagePreview(isEditing ? currentItem.imageUrl || null : null);
     }
   };
 
@@ -76,13 +102,14 @@ export default function MenuManagementPage() {
     setCurrentItem(prev => ({ ...prev, category: value }));
   };
 
-
   const handleOpenEditDialog = (item?: MenuItem) => {
     if (item) {
-      setCurrentItem({...item, price: item.price.toString()}); // Converte preço para string ao editar
+      setCurrentItem({...item, price: item.price.toString()});
+      setImagePreview(item.imageUrl || null);
       setIsEditing(true);
     } else {
       setCurrentItem({...initialMenuItemFormState, price: ''});
+      setImagePreview(null);
       setIsEditing(false);
     }
     setIsEditDialogOpen(true);
@@ -100,24 +127,24 @@ export default function MenuManagementPage() {
 
     const itemDataForApi = {
         ...currentItem,
-        price: priceAsNumber, // Envia como número
+        price: priceAsNumber,
     };
 
     try {
-      if (isEditing && 'id' in currentItem && typeof currentItem.id === 'string') { // Verifica se currentItem tem 'id'
-        await updateMenuItem({ ...itemDataForApi, id: currentItem.id } as MenuItem); // Cast para MenuItem
+      if (isEditing && 'id' in currentItem && typeof currentItem.id === 'string') {
+        await updateMenuItem({ ...itemDataForApi, id: currentItem.id } as MenuItem);
         toast({ title: "Sucesso", description: "Item do cardápio atualizado.", variant: "default" });
       } else {
-        // Para adicionar, removemos o 'id' se ele existir por engano no objeto
-        const { id, ...dataToAdd } = itemDataForApi as any; // eslint-disable-line @typescript-eslint/no-unused-vars
+        const { id, ...dataToAdd } = itemDataForApi as any; 
         await addMenuItem(dataToAdd as Omit<MenuItem, 'id' | 'createdAt' | 'updatedAt' >);
         toast({ title: "Sucesso", description: "Novo item adicionado ao cardápio.", variant: "default" });
       }
       fetchMenuItems();
       setIsEditDialogOpen(false);
+      setImagePreview(null); // Limpa o preview após submissão
     } catch (error) {
       console.error("Erro ao salvar item:", error);
-      toast({ title: "Erro", description: `Falha ao ${isEditing ? 'atualizar' : 'adicionar'} item. Verifique o console.`, variant: "destructive" });
+      toast({ title: "Erro ao Salvar", description: `Falha ao ${isEditing ? 'atualizar' : 'adicionar'} item. Verifique se o banco de dados está configurado e as migrações aplicadas. Erro: ${(error as Error).message}`, variant: "destructive" });
     } finally {
       setIsSubmitting(false);
     }
@@ -144,6 +171,8 @@ export default function MenuManagementPage() {
   const menuCategories = Array.from(new Set(menuItems.map(item => item.category))).sort();
   const availableCategoriesForForm = ["Pizzas Salgadas", "Pizzas Doces", "Bebidas", "Entradas", "Sobremesas", "Outros"];
 
+  // Helper para verificar se uma string é uma Data URL
+  const isDataUrl = (url: string | undefined): boolean => !!url && url.startsWith('data:image');
 
   return (
     <div className="flex flex-col min-h-screen bg-background">
@@ -166,7 +195,7 @@ export default function MenuManagementPage() {
             <Loader2 className="h-12 w-12 animate-spin text-primary" />
              <SplitText text="Carregando cardápio..." as="p" className="ml-4 text-xl font-semibold" />
           </div>
-        ) : menuItems.length === 0 ? (
+        ) : menuItems.length === 0 && !isLoading ? ( // Adicionado !isLoading para evitar flash
             <div className="text-center py-10">
                 <Utensils className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
                 <h2 className="text-xl font-semibold mb-2">Seu cardápio está vazio!</h2>
@@ -190,7 +219,14 @@ export default function MenuManagementPage() {
                        )}
                        <div className="relative w-full h-48 bg-muted">
                         {item.imageUrl ? (
-                          <Image src={item.imageUrl} alt={item.name} layout="fill" objectFit="cover" data-ai-hint={item.dataAiHint || "food item"} />
+                          <Image 
+                            src={item.imageUrl} 
+                            alt={item.name} 
+                            layout="fill" 
+                            objectFit="cover" 
+                            data-ai-hint={isDataUrl(item.imageUrl) ? 'uploaded image' : (item.dataAiHint || "food item")}
+                            unoptimized={isDataUrl(item.imageUrl)} // Necessário para Data URLs se não estiverem otimizadas por um loader
+                          />
                         ) : (
                           <div className="flex items-center justify-center h-full">
                             <ImageIcon className="h-16 w-16 text-muted-foreground" />
@@ -220,7 +256,7 @@ export default function MenuManagementPage() {
           </div>
         )}
 
-        <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <Dialog open={isEditDialogOpen} onOpenChange={(open) => { setIsEditDialogOpen(open); if(!open) setImagePreview(null); }}>
           <DialogContent className="sm:max-w-lg">
             <DialogHeader>
               <DialogTitle className="font-headline">{isEditing ? 'Editar Item do Cardápio' : 'Adicionar Novo Item ao Cardápio'}</DialogTitle>
@@ -238,7 +274,7 @@ export default function MenuManagementPage() {
                 <Input 
                     id="price" 
                     name="price" 
-                    type="text" // Usar text para permitir vírgula e ponto, mas validar como número
+                    type="text"
                     value={String(currentItem.price)} 
                     onChange={handleInputChange} 
                     placeholder="Ex: 25.50 ou 25,50"
@@ -247,7 +283,7 @@ export default function MenuManagementPage() {
               </div>
                <div>
                 <Label htmlFor="category">Categoria</Label>
-                <Select name="category" value={currentItem.category} onValueChange={handleSelectChange}>
+                <Select name="category" value={currentItem.category} onValueChange={handleSelectChange} required>
                   <SelectTrigger id="category">
                     <SelectValue placeholder="Selecione uma categoria..." />
                   </SelectTrigger>
@@ -262,12 +298,49 @@ export default function MenuManagementPage() {
                 <Label htmlFor="description">Descrição (opcional)</Label>
                 <Textarea id="description" name="description" value={currentItem.description || ''} onChange={handleInputChange} />
               </div>
+              
               <div>
-                <Label htmlFor="imageUrl">URL da Imagem (opcional)</Label>
-                <Input id="imageUrl" name="imageUrl" value={currentItem.imageUrl || ''} onChange={handleInputChange} placeholder="https://exemplo.com/imagem.png" />
-                 {currentItem.imageUrl && (
-                    <div className="mt-2 relative w-full h-32 rounded border overflow-hidden">
-                        <Image src={currentItem.imageUrl} alt="Pré-visualização" layout="fill" objectFit="contain" data-ai-hint={currentItem.dataAiHint || "food preview"}/>
+                <Label htmlFor="imageFile">Imagem do Item (opcional, máx 2MB)</Label>
+                <div className="flex items-center gap-2 mt-1">
+                    <Input 
+                        id="imageFile" 
+                        name="imageFile" 
+                        type="file" 
+                        accept="image/png, image/jpeg, image/webp, image/gif"
+                        onChange={handleImageFileChange}
+                        className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
+                    />
+                    { (imagePreview || currentItem.imageUrl) && (
+                         <Button type="button" variant="ghost" size="sm" onClick={() => { setImagePreview(null); setCurrentItem(prev => ({ ...prev, imageUrl: '' })); const fileInput = document.getElementById('imageFile') as HTMLInputElement; if(fileInput) fileInput.value = "";}}>
+                            Limpar
+                        </Button>
+                    )}
+                </div>
+                 {(imagePreview || (isEditing && currentItem.imageUrl && isDataUrl(currentItem.imageUrl))) && (
+                    <div className="mt-2 relative w-full h-32 rounded border overflow-hidden bg-muted flex items-center justify-center">
+                        <Image 
+                            src={imagePreview || currentItem.imageUrl!} 
+                            alt="Pré-visualização" 
+                            layout="fill" 
+                            objectFit="contain" 
+                            data-ai-hint="uploaded preview"
+                            unoptimized // Para Data URLs
+                        />
+                    </div>
+                 )}
+                 {isEditing && currentItem.imageUrl && !isDataUrl(currentItem.imageUrl) && !imagePreview && (
+                     <div className="mt-2">
+                        <p className="text-xs text-muted-foreground">URL da imagem atual:</p>
+                        <a href={currentItem.imageUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 break-all">{currentItem.imageUrl}</a>
+                        <p className="text-xs text-muted-foreground mt-1">Para alterar, selecione um novo arquivo acima. A URL atual será substituída.</p>
+                     </div>
+                 )}
+                 {!imagePreview && !currentItem.imageUrl && (
+                    <div className="mt-2 flex items-center justify-center h-32 rounded border border-dashed bg-muted/50">
+                        <div className="text-center text-muted-foreground">
+                            <UploadCloud className="mx-auto h-8 w-8 mb-1" />
+                            <p className="text-xs">Nenhuma imagem selecionada</p>
+                        </div>
                     </div>
                  )}
               </div>
@@ -283,7 +356,7 @@ export default function MenuManagementPage() {
               </div>
               <DialogFooter>
                 <DialogClose asChild>
-                    <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)}>Cancelar</Button>
+                    <Button type="button" variant="outline" onClick={() => { setIsEditDialogOpen(false); setImagePreview(null);}}>Cancelar</Button>
                 </DialogClose>
                 <Button type="submit" disabled={isSubmitting}>
                   {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

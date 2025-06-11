@@ -1,3 +1,4 @@
+
 {
   "version": "7",
   "dialect": "postgresql",
@@ -5,8 +6,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1700000000000,
-      "tag": "0000_create_order_display_id_sequence",
+      "when": 1700000000002,
+      "tag": "0000_initial_setup",
       "breakpoints": true
     }
   ]

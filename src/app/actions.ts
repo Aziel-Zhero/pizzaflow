@@ -26,7 +26,7 @@ import type {
     Coupon,
     DiscountType
 } from '@/lib/types';
-import { optimizeDeliveryRoute as aiOptimizeDeliveryRoute, optimizeMultiDeliveryRoute as aiOptimizeMultiDeliveryRoute } from '@/ai/flows/optimize-delivery-route';
+import { optimizeMultiDeliveryRoute as aiOptimizeMultiDeliveryRoute } from '@/ai/flows/optimize-delivery-route'; // optimizeDeliveryRoute foi removido de AI
 import { format, subDays, parseISO, differenceInMinutes, startOfDay, endOfDay, isFuture } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import crypto from 'crypto';
@@ -54,6 +54,7 @@ export async function addMenuItem(item: Omit<MenuItem, 'id' | 'createdAt' | 'upd
   console.log("actions.ts: Attempting to add menu item with Drizzle:", item);
   try {
     const [newItemFromDb] = await db.insert(menuItemsTable).values({
+        id: crypto.randomUUID(), // Drizzle não gera UUID por padrão na inserção como Prisma
         name: item.name,
         price: String(item.price), 
         category: item.category,
@@ -116,11 +117,14 @@ export async function updateMenuItem(updatedItem: MenuItem): Promise<MenuItem | 
 export async function deleteMenuItem(itemId: string): Promise<boolean> {
   console.log("actions.ts: Attempting to delete menu item with Drizzle:", itemId);
   try {
+    // Verificar se o item está em algum pedido. A FK tem 'restrict', então o DB impediria.
+    // Esta verificação é mais para feedback ao usuário.
     const result = await db.select({ count: dslCount() }).from(orderItemsTable).where(eq(orderItemsTable.menuItemId, itemId));
     const orderItemsCount = result[0]?.count || 0;
 
     if (orderItemsCount > 0) {
         console.warn(`actions.ts: Attempt to delete MenuItem ${itemId} which is in ${orderItemsCount} orders. Deletion blocked due to 'restrict' onDelete policy.`);
+        // Idealmente, a UI deve informar isso ao usuário.
         return false; 
     }
 
@@ -133,14 +137,18 @@ export async function deleteMenuItem(itemId: string): Promise<boolean> {
         return false;
     }
   } catch (error) {
+    // Drizzle pode lançar um erro específico se a restrição FK for violada no DB.
+    // Ex: error.code === '23503' (foreign_key_violation no PostgreSQL)
     console.error("actions.ts: Error deleting menu item from DB with Drizzle:", error);
-    return false;
+    return false; // Ou lançar o erro para a UI tratar de forma mais específica
   }
 }
 
 // --- Funções de Pedidos ---
 
 const mapDbOrderToOrderType = (dbOrder: any): Order => {
+  // O tipo 'any' aqui é devido à natureza dinâmica do 'with' do Drizzle.
+  // Em um cenário mais robusto, poderíamos ter tipos mais estritos para os resultados da query.
   const items = (dbOrder.items || []).map((item: any) => ({
     ...item,
     id: item.id || crypto.randomUUID(), // Ensure OrderItem has an id for client-side keys
@@ -178,8 +186,8 @@ export async function getOrders(): Promise<Order[]> {
   try {
     const ordersFromDb = await db.query.orders.findMany({
       with: {
-        items: true, 
-        coupon: true,  
+        items: true, // Popula o campo 'items' definido nas relações
+        coupon: true,  // Popula o campo 'coupon'
       },
       orderBy: [desc(ordersTable.createdAt)],
     });
@@ -218,7 +226,7 @@ export async function getOrderById(orderId: string): Promise<Order | null> {
 export async function updateOrderStatus(orderId: string, status: OrderStatus): Promise<Order | null> {
   console.log(`actions.ts: Updating status for order ${orderId} to ${status} with Drizzle...`);
   try {
-    const updatePayload: Partial<typeof ordersTable.$inferInsert> = {
+    const updatePayload: Partial<typeof ordersTable.$inferInsert> = { // Usar o tipo de inserção para $set
       status,
       updatedAt: new Date(),
     };
@@ -227,17 +235,19 @@ export async function updateOrderStatus(orderId: string, status: OrderStatus): P
       updatePayload.deliveredAt = new Date();
     }
 
+    // Drizzle retorna um array. Pegamos o primeiro (e único, esperamos) elemento.
     const [updatedDbOrderArr] = await db.update(ordersTable)
       .set(updatePayload)
       .where(eq(ordersTable.id, orderId))
-      .returning({ id: ordersTable.id }); 
+      .returning({ id: ordersTable.id }); // Retornar apenas o ID é suficiente para saber se atualizou
 
     if (!updatedDbOrderArr || !updatedDbOrderArr.id) {
       console.warn(`actions.ts: Order ${orderId} not found for status update.`);
       return null;
     }
 
-    console.log(`actions.ts: Status for order ${orderId} updated to ${status}.`);
+    console.log(`actions.ts: Status for order ${orderId} updated to ${status}. Fetching full order...`);
+    // Após a atualização, buscamos o pedido completo para retornar à UI
     return getOrderById(orderId); 
   } catch (error) {
     console.error(`actions.ts: Error updating status for order ${orderId}:`, error);
@@ -249,7 +259,7 @@ export async function assignDelivery(orderId: string, route: string, deliveryPer
   console.log(`actions.ts: Assigning delivery for order ${orderId} to ${deliveryPersonName} with Drizzle...`);
   try {
     const updatePayload: Partial<typeof ordersTable.$inferInsert> = {
-      status: 'SaiuParaEntrega',
+      status: 'SaiuParaEntrega', // Hardcoded aqui, mas poderia ser um parâmetro se necessário
       optimizedRoute: route,
       deliveryPerson: deliveryPersonName,
       updatedAt: new Date(),
@@ -264,7 +274,7 @@ export async function assignDelivery(orderId: string, route: string, deliveryPer
       console.warn(`actions.ts: Order ${orderId} not found for delivery assignment.`);
       return null;
     }
-    console.log(`actions.ts: Delivery for order ${orderId} assigned to ${deliveryPersonName}.`);
+    console.log(`actions.ts: Delivery for order ${orderId} assigned to ${deliveryPersonName}. Fetching full order...`);
     return getOrderById(orderId);
   } catch (error) {
     console.error(`actions.ts: Error assigning delivery for order ${orderId}:`, error);
@@ -282,24 +292,28 @@ export async function assignMultiDelivery(plan: OptimizeMultiDeliveryRouteOutput
   }
 
   try {
+    // Drizzle não suporta transações de múltiplos updates complexos da mesma forma que Prisma em uma única chamada.
+    // Iteramos ou usamos `inArray` para cada conjunto de IDs se a atualização for a mesma.
     for (const leg of plan.optimizedRoutePlan) {
       if (!leg.orderIds || leg.orderIds.length === 0) continue;
 
       const updatePayload: Partial<typeof ordersTable.$inferInsert> = {
         status: 'SaiuParaEntrega',
-        optimizedRoute: leg.googleMapsUrl,
+        optimizedRoute: leg.googleMapsUrl, // A URL da rota para esta "perna"
         deliveryPerson: deliveryPersonName,
         updatedAt: new Date(),
       };
       
+      // Atualiza todos os pedidos nesta perna da rota
       const result = await db.update(ordersTable)
         .set(updatePayload)
         .where(inArray(ordersTable.id, leg.orderIds))
         .returning({ id: ordersTable.id });
       
+      // Busca os pedidos atualizados completos para retornar
       for (const updated of result) {
         if (updated.id) {
-            const fullOrder = await getOrderById(updated.id);
+            const fullOrder = await getOrderById(updated.id); // Reutiliza getOrderById
             if (fullOrder) {
             successfullyUpdatedOrders.push(fullOrder);
             }
@@ -311,48 +325,65 @@ export async function assignMultiDelivery(plan: OptimizeMultiDeliveryRouteOutput
     return successfullyUpdatedOrders;
   } catch (error) {
     console.error(`actions.ts: Error assigning multi-delivery:`, error);
+    // Poderia adicionar lógica de rollback se uma parte falhar, mas é complexo sem transações distribuídas fáceis.
+    // Por enquanto, apenas logamos o erro.
     throw error;
   }
 }
 
+// Em updateOrderDetails, o argumento `fullUpdatedOrderDataFromClient` pode ser o objeto Order completo
+// que vem do modal, já com as modificações que o usuário fez na UI.
 export async function updateOrderDetails(
-  fullUpdatedOrderDataFromClient: Order
+  fullUpdatedOrderDataFromClient: Order // Tipo já é Order, que é o que o modal manipula
 ): Promise<Order | null> {
   const orderId = fullUpdatedOrderDataFromClient.id;
   console.log(`actions.ts: Updating details for order ${orderId} with Drizzle...Data:`, fullUpdatedOrderDataFromClient);
   try {
+    // Montamos o payload de atualização apenas com os campos que realmente podem ser alterados aqui.
+    // `totalAmount` e `items` geralmente não são editados diretamente após o pedido ser feito.
     const updatePayload: Partial<typeof ordersTable.$inferInsert> = {
-      updatedAt: new Date(), 
+      updatedAt: new Date(), // Sempre atualiza o timestamp
     };
 
+    // Adiciona campos ao payload se eles foram fornecidos (diferentes de undefined)
+    // Isso evita sobrescrever campos com `null` ou `undefined` se eles não foram alterados no modal.
     if (fullUpdatedOrderDataFromClient.customerName !== undefined) updatePayload.customerName = fullUpdatedOrderDataFromClient.customerName;
     if (fullUpdatedOrderDataFromClient.customerAddress !== undefined) updatePayload.customerAddress = fullUpdatedOrderDataFromClient.customerAddress;
     if (fullUpdatedOrderDataFromClient.customerCep !== undefined) updatePayload.customerCep = fullUpdatedOrderDataFromClient.customerCep;
     if (fullUpdatedOrderDataFromClient.customerReferencePoint !== undefined) updatePayload.customerReferencePoint = fullUpdatedOrderDataFromClient.customerReferencePoint;
+    
     if (fullUpdatedOrderDataFromClient.paymentType !== undefined) updatePayload.paymentType = fullUpdatedOrderDataFromClient.paymentType;
     if (fullUpdatedOrderDataFromClient.paymentStatus !== undefined) updatePayload.paymentStatus = fullUpdatedOrderDataFromClient.paymentStatus;
+    
     if (fullUpdatedOrderDataFromClient.notes !== undefined) updatePayload.notes = fullUpdatedOrderDataFromClient.notes;
     if (fullUpdatedOrderDataFromClient.nfeLink !== undefined) updatePayload.nfeLink = fullUpdatedOrderDataFromClient.nfeLink;
     
+    // Se o status for alterado E for 'Entregue', e deliveredAt não estiver preenchido, preenchemos.
     if (fullUpdatedOrderDataFromClient.status !== undefined) {
       updatePayload.status = fullUpdatedOrderDataFromClient.status;
       if (fullUpdatedOrderDataFromClient.status === 'Entregue') {
+        // Verifica se deliveredAt já existe (string ISO) e se é válido, senão usa new Date()
         const currentOrderState = await db.query.orders.findFirst({
             where: eq(ordersTable.id, orderId),
             columns: { deliveredAt: true }
         });
-        if (currentOrderState && !currentOrderState.deliveredAt) { 
+        if (currentOrderState && !currentOrderState.deliveredAt) { // Se não tem deliveredAt no banco
             updatePayload.deliveredAt = new Date();
         } else if (currentOrderState && currentOrderState.deliveredAt && fullUpdatedOrderDataFromClient.deliveredAt) {
+            // Se já tem no banco E veio um do cliente (ex: usuário editou data retroativa)
              updatePayload.deliveredAt = parseISO(fullUpdatedOrderDataFromClient.deliveredAt);
-        } else if (!currentOrderState?.deliveredAt) { 
+        } else if (!currentOrderState?.deliveredAt) { // Precaução, se não houver estado atual (improvável)
             updatePayload.deliveredAt = new Date();
         }
+        // Se já tem deliveredAt no banco e não veio do cliente, não alteramos.
       }
     }
+
     if (fullUpdatedOrderDataFromClient.deliveryPerson !== undefined) updatePayload.deliveryPerson = fullUpdatedOrderDataFromClient.deliveryPerson;
     if (fullUpdatedOrderDataFromClient.optimizedRoute !== undefined) updatePayload.optimizedRoute = fullUpdatedOrderDataFromClient.optimizedRoute;
 
+
+    // Evita update desnecessário se apenas `updatedAt` estiver no payload
     if (Object.keys(updatePayload).length === 1 && updatePayload.updatedAt) {
         console.log(`actions.ts: No actual changes detected for order ${orderId} other than updatedAt. Skipping update, fetching current.`);
         return getOrderById(orderId);
@@ -367,7 +398,7 @@ export async function updateOrderDetails(
       console.warn(`actions.ts: Order ${orderId} not found for details update.`);
       return null;
     }
-    console.log(`actions.ts: Details for order ${orderId} updated.`);
+    console.log(`actions.ts: Details for order ${orderId} updated. Fetching full order...`);
     return getOrderById(orderId);
   } catch (error) {
     console.error(`actions.ts: Error updating details for order ${orderId}:`, error);
@@ -378,16 +409,23 @@ export async function updateOrderDetails(
 export async function addNewOrder(newOrderData: NewOrderClientData): Promise<Order> {
   console.log("actions.ts: Attempting to add new order with Drizzle:", newOrderData);
 
+  // Drizzle usa db.transaction para operações atômicas
   return db.transaction(async (tx) => {
     let appliedCoupon: Coupon | null = null;
     let discountAmount = 0;
     let finalCouponId: string | undefined = undefined;
 
-    // 1. Calculate subtotal
+    // 1. Calcular subtotal (soma dos preços dos itens * quantidade)
     const subtotal = newOrderData.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
-    // 2. Handle coupon
+    // 2. Lidar com cupom, se fornecido
     if (newOrderData.couponCode) {
+      // Usar a action getActiveCouponByCode, que já busca e valida o cupom
+      // Como estamos dentro de uma transação (tx), o ideal seria que getActiveCouponByCode
+      // pudesse aceitar 'tx' como argumento para usar a mesma transação.
+      // Por simplicidade, vamos chamá-la fora ou assumir que a leitura não precisa ser transacional com as escritas.
+      // Para consistência, o ideal seria que a busca do cupom também usasse 'tx'.
+      // Vamos simular a busca com 'tx' aqui para fins de exemplo de como seria.
       const couponFromDb = await tx.query.coupons.findFirst({
         where: and(
           eq(couponsTable.code, newOrderData.couponCode),
@@ -400,11 +438,11 @@ export async function addNewOrder(newOrderData: NewOrderClientData): Promise<Ord
       if (couponFromDb) {
         const couponMinOrderAmount = couponFromDb.minOrderAmount ? parseFloat(couponFromDb.minOrderAmount as string) : 0;
         if (subtotal >= couponMinOrderAmount) {
-          appliedCoupon = { // Map to Coupon type
+          appliedCoupon = { // Mapeia para o tipo Coupon
             ...couponFromDb,
             discountValue: parseFloat(couponFromDb.discountValue as string),
             minOrderAmount: couponFromDb.minOrderAmount ? parseFloat(couponFromDb.minOrderAmount as string) : undefined,
-            createdAt: couponFromDb.createdAt.toISOString(),
+            createdAt: couponFromDb.createdAt.toISOString(), // Supondo que createdAt e updatedAt são Date
             updatedAt: couponFromDb.updatedAt.toISOString(),
             expiresAt: couponFromDb.expiresAt ? couponFromDb.expiresAt.toISOString() : undefined,
           };
@@ -414,19 +452,21 @@ export async function addNewOrder(newOrderData: NewOrderClientData): Promise<Ord
           } else { // FIXED_AMOUNT
             discountAmount = appliedCoupon.discountValue;
           }
-          discountAmount = Math.min(discountAmount, subtotal); // Cannot discount more than subtotal
+          discountAmount = Math.min(discountAmount, subtotal); // Desconto não pode ser maior que o subtotal
           finalCouponId = appliedCoupon.id;
         } else {
-          console.warn(`Coupon ${newOrderData.couponCode} requires min order of ${couponMinOrderAmount}, subtotal is ${subtotal}.`);
+          console.warn(`Coupon ${newOrderData.couponCode} requires min order of ${couponMinOrderAmount}, subtotal is ${subtotal}. Not applying.`);
+          // Poderia lançar um erro ou retornar uma mensagem para a UI aqui
         }
       } else {
         console.warn(`Coupon ${newOrderData.couponCode} not found, inactive, expired, or fully used.`);
+        // Poderia lançar um erro ou retornar uma mensagem para a UI aqui
       }
     }
 
     const totalAmount = subtotal - discountAmount;
 
-    // 3. Insert into orders table
+    // 3. Inserir na tabela 'orders'
     const newOrderId = crypto.randomUUID();
     const [insertedOrder] = await tx.insert(ordersTable).values({
       id: newOrderId,
@@ -434,10 +474,10 @@ export async function addNewOrder(newOrderData: NewOrderClientData): Promise<Ord
       customerAddress: newOrderData.customerAddress,
       customerCep: newOrderData.customerCep || null,
       customerReferencePoint: newOrderData.customerReferencePoint || null,
-      totalAmount: String(totalAmount.toFixed(2)),
-      status: 'Pendente', // Default status
-      paymentType: newOrderData.paymentType || null,
-      paymentStatus: 'Pendente', // Default payment status
+      totalAmount: String(totalAmount.toFixed(2)), // Salvar como string para decimal
+      status: 'Pendente', // Status inicial
+      paymentType: newOrderData.paymentType || null, // Se vazio, será null
+      paymentStatus: 'Pendente', // Status de pagamento inicial
       notes: newOrderData.notes || null,
       appliedCouponCode: appliedCoupon ? appliedCoupon.code : null,
       appliedCouponDiscount: discountAmount > 0 ? String(discountAmount.toFixed(2)) : null,
@@ -450,14 +490,14 @@ export async function addNewOrder(newOrderData: NewOrderClientData): Promise<Ord
       throw new Error("Failed to insert order into database.");
     }
 
-    // 4. Insert order items
+    // 4. Inserir os itens do pedido em 'orderItemsTable'
     const orderItemsToInsert = newOrderData.items.map(item => ({
       id: crypto.randomUUID(),
       orderId: insertedOrder.id,
       menuItemId: item.menuItemId,
-      name: item.name,
+      name: item.name, // Denormalizado para histórico
       quantity: item.quantity,
-      price: String(item.price.toFixed(2)),
+      price: String(item.price.toFixed(2)), // Preço no momento do pedido, como string
       itemNotes: item.itemNotes || null,
     }));
 
@@ -465,14 +505,15 @@ export async function addNewOrder(newOrderData: NewOrderClientData): Promise<Ord
       await tx.insert(orderItemsTable).values(orderItemsToInsert);
     }
 
-    // 5. Update coupon usage
+    // 5. Atualizar contagem de uso do cupom, se um foi aplicado
     if (appliedCoupon && finalCouponId) {
       await tx.update(couponsTable)
-        .set({ timesUsed: sql`${couponsTable.timesUsed} + 1` })
+        .set({ timesUsed: sql`${couponsTable.timesUsed} + 1` }) // Incrementa timesUsed
         .where(eq(couponsTable.id, finalCouponId));
     }
 
-    // 6. Fetch and return the complete order
+    // 6. Buscar o pedido completo para retornar à UI
+    // Esta busca deve ser feita com 'tx' para ler dentro da mesma transação
     const fullOrder = await tx.query.orders.findFirst({
       where: eq(ordersTable.id, insertedOrder.id),
       with: {
@@ -482,14 +523,16 @@ export async function addNewOrder(newOrderData: NewOrderClientData): Promise<Ord
     });
 
     if (!fullOrder) {
+        // Isso seria muito inesperado se a inserção acima funcionou
         throw new Error("Failed to retrieve the newly created order.");
     }
     
     console.log("actions.ts: New order added successfully with Drizzle:", fullOrder.id);
-    return mapDbOrderToOrderType(fullOrder);
+    return mapDbOrderToOrderType(fullOrder); // Mapeia para o tipo da aplicação
   }).catch(error => {
+    // Se qualquer parte da transação falhar, Drizzle fará o rollback automaticamente.
     console.error("actions.ts: Error in addNewOrder transaction with Drizzle:", error);
-    throw error; // Re-throw to be caught by the caller
+    throw error; // Re-lança o erro para o chamador (UI) lidar
   });
 }
 
@@ -499,18 +542,23 @@ export async function simulateNewOrder(): Promise<Order> {
     // Fetch a couple of menu items to build the order
     const menuItemsForOrder = await db.select().from(menuItemsTable).limit(2);
     if (menuItemsForOrder.length < 1) {
-        throw new Error("Cannot simulate order: No menu items available.");
+        // Se não houver itens de menu, não podemos simular.
+        // Poderíamos criar alguns itens de menu aqui se quiséssemos, mas isso complica o seed.
+        // Por agora, vamos lançar um erro ou retornar um indicativo.
+        // Ou, melhor ainda, se esta função é para teste, ela deveria garantir que há itens.
+        // Vamos assumir que, para simulação, itens de menu já existem (ex: via seed)
+        throw new Error("Cannot simulate order: No menu items available. Please seed the database first.");
     }
 
     const items: NewOrderClientItemData[] = menuItemsForOrder.map((item, index) => ({
         menuItemId: item.id,
         name: item.name,
-        price: parseFloat(item.price as string),
-        quantity: index === 0 ? 2 : 1, // First item quantity 2, second item quantity 1
+        price: parseFloat(item.price as string), // Converter de string para número
+        quantity: index === 0 ? 2 : 1, // Primeiro item quantity 2, segundo item quantity 1
         itemNotes: index === 0 ? "Extra cheese on one" : undefined,
     }));
 
-    // Try to apply a coupon if one exists and is simple
+    // Tenta encontrar um cupom simples para aplicar na simulação
     let couponCodeToTry: string | undefined = undefined;
     try {
         const firstActiveCoupon = await db.query.coupons.findFirst({
@@ -518,7 +566,7 @@ export async function simulateNewOrder(): Promise<Order> {
                 eq(couponsTable.isActive, true),
                 or(isNull(couponsTable.expiresAt), gt(couponsTable.expiresAt, new Date())),
                 or(isNull(couponsTable.usageLimit), gt(couponsTable.usageLimit, couponsTable.timesUsed)),
-                isNull(couponsTable.minOrderAmount) // Simple coupon without min order amount for simulation
+                isNull(couponsTable.minOrderAmount) // Para simplificar, pega um cupom sem valor mínimo de pedido
             )
         });
         if (firstActiveCoupon) {
@@ -534,19 +582,31 @@ export async function simulateNewOrder(): Promise<Order> {
         items: items,
         paymentType: Math.random() > 0.5 ? "Dinheiro" : "Cartao",
         notes: "Este é um pedido simulado gerado automaticamente.",
-        couponCode: couponCodeToTry,
+        couponCode: couponCodeToTry, // Tenta aplicar o cupom encontrado
     };
 
-    return addNewOrder(simulatedOrderData);
+    return addNewOrder(simulatedOrderData); // Chama a action principal de adicionar pedido
 }
 
 // --- Funções de IA ---
+// Simplificada para construir a URL diretamente para uma única entrega
 export async function optimizeRouteAction(pizzeriaAddress: string, customerAddress: string): Promise<OptimizeDeliveryRouteOutput> {
-    const input: OptimizeDeliveryRouteInput = { pizzeriaAddress, customerAddress };
-    return aiOptimizeDeliveryRoute(input);
+    console.log("actions.ts: Generating single delivery route URL directly.");
+    try {
+        const origin = encodeURIComponent(pizzeriaAddress);
+        const destination = encodeURIComponent(customerAddress);
+        const mapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`;
+        return { optimizedRoute: mapsUrl };
+    } catch (error) {
+        console.error("actions.ts: Error generating single route URL:", error);
+        // Fallback para um formato mais simples se o encode falhar (improvável)
+        const fallbackUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(customerAddress)}`;
+        return { optimizedRoute: fallbackUrl };
+    }
 }
 
 export async function optimizeMultiRouteAction(input: OptimizeMultiDeliveryRouteInput): Promise<OptimizeMultiDeliveryRouteOutput> {
+    // Esta função continuará usando a IA para múltiplas rotas
     return aiOptimizeMultiDeliveryRoute(input);
 }
 
@@ -555,6 +615,7 @@ export async function optimizeMultiRouteAction(input: OptimizeMultiDeliveryRoute
 export async function getDashboardAnalytics(): Promise<DashboardAnalyticsData> {
   console.warn("actions.ts: getDashboardAnalytics function needs to be refactored for Drizzle.");
   // This will require several Drizzle queries (counts, sums, averages, group by).
+  // Placeholder:
   return Promise.resolve({ 
     totalOrders: 0,
     totalRevenue: 0,
@@ -575,18 +636,20 @@ export async function exportOrdersToCSV(): Promise<string> {
 }
 
 export async function fetchAddressFromCep(cep: string): Promise<CepAddress | null> {
-  await new Promise(resolve => setTimeout(resolve, 600)); 
-  const cleanedCep = cep.replace(/\D/g, '');
+  // Simulação de busca de CEP. Em produção, use uma API real.
+  await new Promise(resolve => setTimeout(resolve, 600)); // Simula delay de rede
+  const cleanedCep = cep.replace(/\D/g, ''); // Remove não dígitos
   if (cleanedCep.length !== 8) {
     console.error("actions.ts: CEP inválido fornecido para fetchAddressFromCep:", cep);
     return null;
   }
   console.log(`actions.ts: Simulando busca por CEP: ${cleanedCep}`);
+  // Adicione mais CEPs mockados conforme necessário para teste
   if (cleanedCep === "12402170") {
-    return { street: "Rua Doutor José Ortiz Monteiro Patto", neighborhood: "Campo Alegre", city: "Pindamonhangaba", state: "SP", fullAddress: "Rua Doutor José Ortiz Monteiro Patto, Campo Alegre, Pindamonhangaba - SP"};
+    return { street: "Rua Joao Paulo de Camargo", neighborhood: "Crispim", city: "Pindamonhangaba", state: "SP", fullAddress: "Rua Joao Paulo de Camargo, Crispim, Pindamonhangaba - SP"};
   } else if (cleanedCep === "12345678") {
     return { street: "Rua das Maravilhas (Mock)", neighborhood: "Bairro Sonho (Mock)", city: "Cidade Fantasia (Mock)", state: "CF", fullAddress: "Rua das Maravilhas (Mock), Bairro Sonho (Mock), Cidade Fantasia (Mock) - CF"};
-  } else if (cleanedCep === "01001000") {
+  } else if (cleanedCep === "01001000") { // Exemplo: Praça da Sé, SP
      return { street: "Praça da Sé", neighborhood: "Sé", city: "São Paulo", state: "SP", fullAddress: "Praça da Sé, Sé, São Paulo - SP"};
   }
   console.warn(`actions.ts: CEP ${cleanedCep} não encontrado na simulação. Adicione-o ou use uma API real.`);
@@ -594,6 +657,7 @@ export async function fetchAddressFromCep(cep: string): Promise<CepAddress | nul
 }
 
 // --- Funções de Cupom ---
+// Implementação básica de getActiveCouponByCode para Drizzle
 export async function getActiveCouponByCode(code: string): Promise<Coupon | null> {
     console.log(`actions.ts: Fetching active coupon by code ${code} with Drizzle...`);
     try {
@@ -601,8 +665,8 @@ export async function getActiveCouponByCode(code: string): Promise<Coupon | null
             where: and(
                 eq(couponsTable.code, code),
                 eq(couponsTable.isActive, true),
-                or(isNull(couponsTable.expiresAt), gt(couponsTable.expiresAt, new Date())), // expiresAt is null OR in the future
-                or(isNull(couponsTable.usageLimit), gt(couponsTable.usageLimit, couponsTable.timesUsed)) // usageLimit is null OR not yet reached
+                or(isNull(couponsTable.expiresAt), gt(couponsTable.expiresAt, new Date())), // expiresAt é nulo OU no futuro
+                or(isNull(couponsTable.usageLimit), gt(couponsTable.usageLimit, couponsTable.timesUsed)) // usageLimit é nulo OU não atingido
             )
         });
 
@@ -612,13 +676,15 @@ export async function getActiveCouponByCode(code: string): Promise<Coupon | null
         }
         
         console.log(`actions.ts: Active coupon ${code} found.`);
-        return { // Map to Coupon type
+        // Mapear para o tipo Coupon da aplicação
+        return {
             ...couponFromDb,
             discountValue: parseFloat(couponFromDb.discountValue as string),
             minOrderAmount: couponFromDb.minOrderAmount ? parseFloat(couponFromDb.minOrderAmount as string) : undefined,
             createdAt: couponFromDb.createdAt.toISOString(),
             updatedAt: couponFromDb.updatedAt.toISOString(),
             expiresAt: couponFromDb.expiresAt ? couponFromDb.expiresAt.toISOString() : undefined,
+            // 'orders' relation not typically populated here unless specifically requested
         };
     } catch (error) {
         console.error(`actions.ts: Error fetching coupon ${code} from DB with Drizzle:`, error);
@@ -626,41 +692,42 @@ export async function getActiveCouponByCode(code: string): Promise<Coupon | null
     }
 }
 
-
+// Placeholder para createCoupon, precisa ser implementado com Drizzle
 export async function createCoupon(data: Omit<Coupon, 'id' | 'createdAt' | 'updatedAt' | 'timesUsed' | 'orders'>): Promise<Coupon> {
     console.log("actions.ts: Attempting to create coupon with Drizzle:", data);
     try {
         const [newCouponFromDb] = await db.insert(couponsTable).values({
+            id: crypto.randomUUID(),
             code: data.code,
             description: data.description || null,
             discountType: data.discountType,
-            discountValue: String(data.discountValue), // Convert number to string for decimal
-            isActive: data.isActive !== undefined ? data.isActive : true,
-            expiresAt: data.expiresAt ? parseISO(data.expiresAt) : null,
+            discountValue: String(data.discountValue), // Salvar como string
+            isActive: data.isActive !== undefined ? data.isActive : true, // Default true se não fornecido
+            expiresAt: data.expiresAt ? parseISO(data.expiresAt) : null, // Converte string ISO para Date
             usageLimit: data.usageLimit,
             minOrderAmount: data.minOrderAmount ? String(data.minOrderAmount) : null,
-            // timesUsed is defaulted to 0 in schema
-            // createdAt and updatedAt have defaultNow()
+            // timesUsed é default 0 no schema
+            // createdAt e updatedAt são defaultNow() no schema
         }).returning();
 
         if (!newCouponFromDb) {
             throw new Error("Failed to create coupon, no data returned.");
         }
         console.log("actions.ts: Coupon created successfully with Drizzle:", newCouponFromDb.id);
-        return {
+        return { // Mapear para o tipo Coupon da aplicação
             ...newCouponFromDb,
             discountValue: parseFloat(newCouponFromDb.discountValue as string),
             minOrderAmount: newCouponFromDb.minOrderAmount ? parseFloat(newCouponFromDb.minOrderAmount as string) : undefined,
             createdAt: newCouponFromDb.createdAt.toISOString(),
             updatedAt: newCouponFromDb.updatedAt.toISOString(),
             expiresAt: newCouponFromDb.expiresAt ? newCouponFromDb.expiresAt.toISOString() : undefined,
+            // 'orders' relation not typically populated here
         };
     } catch (error) {
         console.error("actions.ts: Error creating coupon with Drizzle:", error);
-        // Could check for unique constraint violation on 'code' (error.code for PG)
+        // Poderia verificar por erro de constraint única no 'code' (ex: error.code === '23505' para PG)
         throw error;
     }
 }
     
     
-

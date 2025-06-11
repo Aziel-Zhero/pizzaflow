@@ -1,4 +1,5 @@
-
+CREATE SEQUENCE IF NOT EXISTS "order_display_id_seq" START WITH 1 INCREMENT BY 1;
+--> statement-breakpoint
 DO $$ BEGIN
  CREATE TYPE "public"."discount_type" AS ENUM('PERCENTAGE', 'FIXED_AMOUNT');
 EXCEPTION
@@ -22,8 +23,6 @@ DO $$ BEGIN
 EXCEPTION
  WHEN duplicate_object THEN null;
 END $$;
---> statement-breakpoint
-CREATE SEQUENCE IF NOT EXISTS "public"."order_display_id_seq" START WITH 1 INCREMENT BY 1;
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "coupons" (
 	"id" text PRIMARY KEY NOT NULL,

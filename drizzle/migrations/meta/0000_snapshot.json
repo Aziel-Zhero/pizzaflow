@@ -1,4 +1,3 @@
-
 {
   "id": "00000000-0000-0000-0000-000000000000",
   "prevId": "00000000-0000-0000-0000-000000000000",
@@ -22,11 +21,16 @@
         "created_at": { "name": "created_at", "type": "timestamp with time zone", "primaryKey": false, "notNull": true, "default": "now()" },
         "updated_at": { "name": "updated_at", "type": "timestamp with time zone", "primaryKey": false, "notNull": true, "default": "now()" }
       },
-      "indexes": {}, "foreignKeys": {}, "compositePrimaryKeys": {},
-      "uniqueConstraints": { "coupons_code_unique": { "name": "coupons_code_unique", "nullsNotDistinct": false, "columns": ["code"] } }
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "coupons_code_unique": { "name": "coupons_code_unique", "nullsNotDistinct": false, "columns": ["code"] }
+      }
     },
     "public.delivery_persons": {
-      "name": "delivery_persons", "schema": "",
+      "name": "delivery_persons",
+      "schema": "",
       "columns": {
         "id": { "name": "id", "type": "text", "primaryKey": true, "notNull": true },
         "name": { "name": "name", "type": "varchar(255)", "primaryKey": false, "notNull": true },
@@ -39,7 +43,8 @@
       "indexes": {}, "foreignKeys": {}, "compositePrimaryKeys": {}, "uniqueConstraints": {}
     },
     "public.menu_items": {
-      "name": "menu_items", "schema": "",
+      "name": "menu_items",
+      "schema": "",
       "columns": {
         "id": { "name": "id", "type": "text", "primaryKey": true, "notNull": true },
         "name": { "name": "name", "type": "varchar(255)", "primaryKey": false, "notNull": true },
@@ -55,7 +60,8 @@
       "indexes": {}, "foreignKeys": {}, "compositePrimaryKeys": {}, "uniqueConstraints": {}
     },
     "public.order_items": {
-      "name": "order_items", "schema": "",
+      "name": "order_items",
+      "schema": "",
       "columns": {
         "id": { "name": "id", "type": "text", "primaryKey": true, "notNull": true },
         "order_id": { "name": "order_id", "type": "text", "primaryKey": false, "notNull": true },
@@ -73,7 +79,8 @@
       "compositePrimaryKeys": {}, "uniqueConstraints": {}
     },
     "public.orders": {
-      "name": "orders", "schema": "",
+      "name": "orders",
+      "schema": "",
       "columns": {
         "id": { "name": "id", "type": "text", "primaryKey": true, "notNull": true },
         "display_id": { "name": "display_id", "type": "varchar(50)", "primaryKey": false, "notNull": false },
@@ -114,7 +121,7 @@
   },
   "schemas": {},
   "sequences": {
-    "public.order_display_id_seq": { "name": "order_display_id_seq", "schema": "public", "increment": 1, "start": 1, "cache": 1, "min": 1, "max": 9223372036854775807, "cycle": false }
+    "public.order_display_id_seq": { "name": "order_display_id_seq", "schema": "public", "increment": 1, "minValue": 1, "maxValue": null, "startWith": 1, "cycle": false }
   },
   "_meta": { "columns": {}, "schemas": {}, "tables": {} }
 }

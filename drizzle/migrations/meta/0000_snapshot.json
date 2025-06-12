@@ -1,3 +1,4 @@
+
 {
   "id": "00000000-0000-0000-0000-000000000000",
   "prevId": "00000000-0000-0000-0000-000000000000",
@@ -83,7 +84,6 @@
       "schema": "",
       "columns": {
         "id": { "name": "id", "type": "text", "primaryKey": true, "notNull": true },
-        "display_id": { "name": "display_id", "type": "varchar(50)", "primaryKey": false, "notNull": false },
         "customer_name": { "name": "customer_name", "type": "varchar(255)", "primaryKey": false, "notNull": true },
         "customer_address": { "name": "customer_address", "type": "text", "primaryKey": false, "notNull": true },
         "customer_cep": { "name": "customer_cep", "type": "varchar(20)", "primaryKey": false, "notNull": false },
@@ -119,9 +119,5 @@
     "public.payment_status": { "name": "payment_status", "schema": "public", "values": ["Pendente", "Pago"] },
     "public.payment_type": { "name": "payment_type", "schema": "public", "values": ["Dinheiro", "Cartao", "Online"] }
   },
-  "schemas": {},
-  "sequences": {
-    "public.order_display_id_seq": { "name": "order_display_id_seq", "schema": "public", "increment": 1, "minValue": 1, "maxValue": null, "startWith": 1, "cycle": false }
-  },
-  "_meta": { "columns": {}, "schemas": {}, "tables": {} }
+  "schemas": {}, "sequences": {}, "_meta": { "columns": {}, "schemas": {}, "tables": {} }
 }

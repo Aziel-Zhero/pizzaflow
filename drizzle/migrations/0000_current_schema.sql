@@ -1,5 +1,4 @@
-CREATE SEQUENCE IF NOT EXISTS "order_display_id_seq" START WITH 1 INCREMENT BY 1;
---> statement-breakpoint
+
 DO $$ BEGIN
  CREATE TYPE "public"."discount_type" AS ENUM('PERCENTAGE', 'FIXED_AMOUNT');
 EXCEPTION
@@ -75,7 +74,6 @@ CREATE TABLE IF NOT EXISTS "order_items" (
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "orders" (
 	"id" text PRIMARY KEY NOT NULL,
-	"display_id" varchar(50),
 	"customer_name" varchar(255) NOT NULL,
 	"customer_address" text NOT NULL,
 	"customer_cep" varchar(20),

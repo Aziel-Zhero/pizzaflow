@@ -38,7 +38,6 @@ export interface Coupon {
 
 export interface Order {
   id: string; // UUID - Chave primária real
-  // displayId?: string; // REMOVIDO - Pedidos serão identificados pelo UUID 'id'
   customerName: string;
   customerAddress: string;
   customerCep?: string;
@@ -190,3 +189,4 @@ export interface DeliveryPerson {
   updatedAt: string; // ISO string
   // orders?: Order[]; // Relação se necessário
 }
+

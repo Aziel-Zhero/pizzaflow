@@ -187,7 +187,7 @@ export default function OrderStatusPage() {
     order.status === 'AguardandoRetirada' ? "bg-orange-500" :
     order.status === 'EmPreparo' ? "bg-blue-500" : "bg-yellow-500";
   
-  const displayOrderId = order.id; // Alterado: Usar sempre o ID UUID
+  const displayOrderId = order.id; 
 
 
   return (
@@ -196,7 +196,7 @@ export default function OrderStatusPage() {
       <AppHeader appName={PIZZERIA_NAME} />
       <main className="flex-grow container mx-auto px-4 py-8 flex flex-col items-center">
         <SplitText
-          text={`Status do Pedido: ${displayOrderId.substring(0,13)}...`} // Exibe parte do UUID
+          text={`Status do Pedido: ${displayOrderId.substring(0,13)}...`} 
           as="h1"
           className="text-3xl font-headline font-bold text-primary mb-6 text-center"
           textAlign='center'
@@ -273,7 +273,7 @@ export default function OrderStatusPage() {
                 </Button>
             )}
             <p className="text-xs text-muted-foreground">
-                Última atualização: {format(order.updatedAt ? parseISO(order.updatedAt) : lastUpdated, "dd/MM/yyyy 'às' HH:mm:ss", { locale: ptBR })}
+                Última atualização: {order.updatedAt ? format(parseISO(order.updatedAt), "dd/MM/yyyy 'às' HH:mm:ss", { locale: ptBR }) : format(lastUpdated, "dd/MM/yyyy 'às' HH:mm:ss", { locale: ptBR })}
             </p>
             {order.status !== 'Entregue' && (
                  <Button onClick={() => router.push('/novo-pedido')} variant="link">Fazer Novo Pedido</Button>
@@ -288,3 +288,4 @@ export default function OrderStatusPage() {
     </div>
   );
 }
+

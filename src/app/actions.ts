@@ -176,7 +176,6 @@ const mapDbOrderToOrderType = (dbOrder: any): Order => {
     ...dbOrder,
     items,
     coupon: couponData,
-    // displayId: dbOrder.displayId || undefined, // REMOVIDO
     totalAmount: parseFloat(dbOrder.totalAmount as string),
     appliedCouponDiscount: dbOrder.appliedCouponDiscount ? parseFloat(dbOrder.appliedCouponDiscount as string) : null,
     createdAt: dbOrder.createdAt instanceof Date ? dbOrder.createdAt.toISOString() : String(dbOrder.createdAt),
@@ -205,10 +204,10 @@ export async function getOrders(): Promise<Order[]> {
 }
 
 export async function getOrderById(orderId: string): Promise<Order | null> {
-  console.log(`actions.ts: Fetching order by ID ${orderId} with Drizzle...`); // Alterado: não busca mais por displayId
+  console.log(`actions.ts: Fetching order by ID ${orderId} with Drizzle...`);
   try {
     let orderFromDb = await db.query.orders.findFirst({
-      where: eq(ordersTable.id, orderId), // Alterado: busca apenas por UUID 'id'
+      where: eq(ordersTable.id, orderId), 
       with: {
         items: true,
         coupon: true,
@@ -454,7 +453,6 @@ export async function addNewOrder(newOrderData: NewOrderClientData): Promise<Ord
     
     const orderToInsert = {
       id: newOrderId,
-      // displayId: formattedDisplayId, // REMOVIDO
       customerName: newOrderData.customerName,
       customerAddress: newOrderData.customerAddress,
       customerCep: newOrderData.customerCep || null,
@@ -774,7 +772,7 @@ export async function exportOrdersToCSV(): Promise<string> {
 
         const mappedOrders = ordersData.map(mapDbOrderToOrderType);
 
-        let csvString = "ID Pedido;Cliente;Endereço;CEP;Referência;Data;Status;Tipo Pag.;Status Pag.;Total;Cupom;Desconto Cupom;Entregador;Link NFe;Observações Gerais;Itens\n"; // Removido ID Display
+        let csvString = "ID Pedido;Cliente;Endereço;CEP;Referência;Data;Status;Tipo Pag.;Status Pag.;Total;Cupom;Desconto Cupom;Entregador;Link NFe;Observações Gerais;Itens\n";
 
         for (const order of mappedOrders) {
             const itemsString = order.items.map(item => 
@@ -782,7 +780,6 @@ export async function exportOrdersToCSV(): Promise<string> {
             ).join(' | ');
 
             csvString += `"${order.id}";`;
-            // csvString += `"${order.displayId || ''}";`; // REMOVIDO
             csvString += `"${order.customerName.replace(/"/g, '""')}";`;
             csvString += `"${order.customerAddress.replace(/"/g, '""')}";`;
             csvString += `"${order.customerCep || ''}";`;

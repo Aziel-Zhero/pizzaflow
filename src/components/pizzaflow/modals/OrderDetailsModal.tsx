@@ -52,13 +52,13 @@ const OrderDetailsModal: FC<OrderDetailsModalProps> = ({ order, isOpen, onClose,
     // onClose(); // Fechar o modal é responsabilidade do componente pai após a atualização ser processada
   };
 
-  const displayOrderId = order.id; // Alterado: Usar sempre o ID UUID
+  const displayOrderId = order.id; 
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle className="font-headline">Detalhes do Pedido: {displayOrderId.substring(0,13)}...</DialogTitle> {/* Exibe parte do UUID */}
+          <DialogTitle className="font-headline">Detalhes do Pedido: {displayOrderId.substring(0,13)}...</DialogTitle>
           <DialogDescription>
             Gerencie detalhes, pagamento e NFe para este pedido.
           </DialogDescription>
@@ -205,3 +205,4 @@ const OrderDetailsModal: FC<OrderDetailsModalProps> = ({ order, isOpen, onClose,
 };
 
 export default OrderDetailsModal;
+

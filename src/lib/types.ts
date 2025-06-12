@@ -2,7 +2,7 @@
 
 // Enums from Prisma will be imported or mapped if needed client-side
 // For now, these string unions are fine for client-side logic.
-export type OrderStatus = "Pendente" | "Em Preparo" | "Aguardando Retirada" | "Saiu para Entrega" | "Entregue" | "Cancelado";
+export type OrderStatus = "Pendente" | "Em Preparo" | "AguardandoRetirada" | "Saiu para Entrega" | "Entregue" | "Cancelado";
 export type PaymentType = "Dinheiro" | "Cartao" | "Online" | ""; // Online pode ser PIX. Prisma: Cartão -> Cartao
 export type PaymentStatus = "Pendente" | "Pago";
 export type DiscountType = "PERCENTAGE" | "FIXED_AMOUNT";
@@ -38,7 +38,7 @@ export interface Coupon {
 
 export interface Order {
   id: string; // UUID - Chave primária real
-  displayId?: string; // ID sequencial amigável para exibição (ex: P0001)
+  // displayId?: string; // REMOVIDO - Pedidos serão identificados pelo UUID 'id'
   customerName: string;
   customerAddress: string;
   customerCep?: string;

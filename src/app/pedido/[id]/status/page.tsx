@@ -187,7 +187,7 @@ export default function OrderStatusPage() {
     order.status === 'AguardandoRetirada' ? "bg-orange-500" :
     order.status === 'EmPreparo' ? "bg-blue-500" : "bg-yellow-500";
   
-  const displayOrderId = order.displayId || order.id;
+  const displayOrderId = order.id; // Alterado: Usar sempre o ID UUID
 
 
   return (
@@ -196,7 +196,7 @@ export default function OrderStatusPage() {
       <AppHeader appName={PIZZERIA_NAME} />
       <main className="flex-grow container mx-auto px-4 py-8 flex flex-col items-center">
         <SplitText
-          text={`Status do Pedido: ${displayOrderId}`}
+          text={`Status do Pedido: ${displayOrderId.substring(0,13)}...`} // Exibe parte do UUID
           as="h1"
           className="text-3xl font-headline font-bold text-primary mb-6 text-center"
           textAlign='center'

@@ -176,7 +176,7 @@ const mapDbOrderToOrderType = (dbOrder: any): Order => {
     ...dbOrder,
     items,
     coupon: couponData,
-    displayId: dbOrder.displayId || undefined, 
+    // displayId: dbOrder.displayId || undefined, // REMOVIDO
     totalAmount: parseFloat(dbOrder.totalAmount as string),
     appliedCouponDiscount: dbOrder.appliedCouponDiscount ? parseFloat(dbOrder.appliedCouponDiscount as string) : null,
     createdAt: dbOrder.createdAt instanceof Date ? dbOrder.createdAt.toISOString() : String(dbOrder.createdAt),
@@ -205,13 +205,10 @@ export async function getOrders(): Promise<Order[]> {
 }
 
 export async function getOrderById(orderId: string): Promise<Order | null> {
-  console.log(`actions.ts: Fetching order by ID or DisplayID ${orderId} with Drizzle...`);
+  console.log(`actions.ts: Fetching order by ID ${orderId} with Drizzle...`); // Alterado: não busca mais por displayId
   try {
     let orderFromDb = await db.query.orders.findFirst({
-      where: or(
-        eq(ordersTable.id, orderId), 
-        eq(ordersTable.displayId, orderId) 
-      ),
+      where: eq(ordersTable.id, orderId), // Alterado: busca apenas por UUID 'id'
       with: {
         items: true,
         coupon: true,
@@ -219,10 +216,10 @@ export async function getOrderById(orderId: string): Promise<Order | null> {
     });
 
     if (!orderFromDb) {
-      console.warn(`actions.ts: Order ${orderId} (UUID or displayId) not found.`);
+      console.warn(`actions.ts: Order ${orderId} not found.`);
       return null;
     }
-    console.log(`actions.ts: Order ${orderFromDb.id} (display: ${orderFromDb.displayId || 'N/A'}) found.`);
+    console.log(`actions.ts: Order ${orderFromDb.id} found.`);
     return mapDbOrderToOrderType(orderFromDb);
   } catch (error) {
     console.error(`actions.ts: Error fetching order ${orderId} from DB with Drizzle:`, error);
@@ -337,7 +334,7 @@ export async function updateOrderDetails(
   fullUpdatedOrderDataFromClient: Order 
 ): Promise<Order | null> {
   const orderId = fullUpdatedOrderDataFromClient.id; 
-  console.log(`actions.ts: Updating details for order ${orderId} (display: ${fullUpdatedOrderDataFromClient.displayId}) with Drizzle...Data:`, JSON.stringify(fullUpdatedOrderDataFromClient, null, 2));
+  console.log(`actions.ts: Updating details for order ${orderId} with Drizzle...Data:`, JSON.stringify(fullUpdatedOrderDataFromClient, null, 2));
   try {
     const updatePayload: Partial<typeof ordersTable.$inferInsert> = {
       updatedAt: new Date(), 
@@ -454,27 +451,10 @@ export async function addNewOrder(newOrderData: NewOrderClientData): Promise<Ord
     const totalAmount = subtotal - discountAmount;
     console.log("actions.ts: addNewOrder - Final totalAmount:", totalAmount);
     const newOrderId = crypto.randomUUID();
-
-    let formattedDisplayId = `P_ERR`;
-    try {
-        const sequenceName = 'order_display_id_seq'; 
-        console.log("actions.ts: addNewOrder - Fetching nextval for displayId. Sequence name:", sequenceName);
-        const result = await tx.execute(sql`SELECT nextval(${sql.raw(sequenceName)}) as nextval;`);
-        if (!result.rows || result.rows.length === 0 || result.rows[0].nextval === undefined || result.rows[0].nextval === null) {
-            throw new Error("nextval returned no result or null/undefined value for displayId sequence.");
-        }
-        const displayIdVal = result.rows[0].nextval;
-        formattedDisplayId = `P${String(displayIdVal).padStart(4, '0')}`;
-        console.log("actions.ts: addNewOrder - Generated displayId:", formattedDisplayId);
-    } catch (seqError) {
-        console.error("actions.ts: addNewOrder - CRITICAL ERROR fetching nextval for displayId sequence. Error:", seqError);
-        // Re-throw the error to ensure the transaction is aborted and the client is notified.
-        throw new Error("Falha ao gerar o ID de exibição para o pedido: " + (seqError as Error).message);
-    }
     
     const orderToInsert = {
       id: newOrderId,
-      displayId: formattedDisplayId,
+      // displayId: formattedDisplayId, // REMOVIDO
       customerName: newOrderData.customerName,
       customerAddress: newOrderData.customerAddress,
       customerCep: newOrderData.customerCep || null,
@@ -540,7 +520,7 @@ export async function addNewOrder(newOrderData: NewOrderClientData): Promise<Ord
         throw new Error("Failed to retrieve the newly created order.");
     }
     
-    console.log("actions.ts: New order added successfully with Drizzle. Order ID from DB:", fullOrder.id, "Display ID:", fullOrder.displayId);
+    console.log("actions.ts: New order added successfully with Drizzle. Order ID from DB:", fullOrder.id);
     return mapDbOrderToOrderType(fullOrder); 
   }).catch(error => {
     console.error("actions.ts: CRITICAL ERROR in addNewOrder transaction with Drizzle:", error);
@@ -794,7 +774,7 @@ export async function exportOrdersToCSV(): Promise<string> {
 
         const mappedOrders = ordersData.map(mapDbOrderToOrderType);
 
-        let csvString = "ID Pedido;ID Display;Cliente;Endereço;CEP;Referência;Data;Status;Tipo Pag.;Status Pag.;Total;Cupom;Desconto Cupom;Entregador;Link NFe;Observações Gerais;Itens\n";
+        let csvString = "ID Pedido;Cliente;Endereço;CEP;Referência;Data;Status;Tipo Pag.;Status Pag.;Total;Cupom;Desconto Cupom;Entregador;Link NFe;Observações Gerais;Itens\n"; // Removido ID Display
 
         for (const order of mappedOrders) {
             const itemsString = order.items.map(item => 
@@ -802,7 +782,7 @@ export async function exportOrdersToCSV(): Promise<string> {
             ).join(' | ');
 
             csvString += `"${order.id}";`;
-            csvString += `"${order.displayId || ''}";`;
+            // csvString += `"${order.displayId || ''}";`; // REMOVIDO
             csvString += `"${order.customerName.replace(/"/g, '""')}";`;
             csvString += `"${order.customerAddress.replace(/"/g, '""')}";`;
             csvString += `"${order.customerCep || ''}";`;

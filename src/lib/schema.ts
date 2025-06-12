@@ -35,7 +35,7 @@
     
     export const orders = pgTable('orders', {
       id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
-      displayId: varchar('display_id', {length: 50}), // THIS LINE DEFINES THE COLUMN
+      // displayId: varchar('display_id', {length: 50}), // REMOVIDO
       customerName: varchar('customer_name', { length: 255 }).notNull(),
       customerAddress: text('customer_address').notNull(),
       customerCep: varchar('customer_cep', { length: 20 }),

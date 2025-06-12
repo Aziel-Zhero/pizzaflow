@@ -44,7 +44,7 @@ const OrderCard: FC<OrderCardProps> = ({
   const hasItemNotes = order.items.some(item => item.itemNotes && item.itemNotes.trim() !== '');
   const hasGeneralNotes = order.notes && order.notes.trim() !== '';
 
-  const displayOrderId = order.displayId || order.id; // Prioriza displayId, fallback para UUID
+  const displayOrderId = order.id; // Alterado: Usar sempre o ID UUID
 
   return (
     <Card className={`shadow-lg hover:shadow-xl transition-shadow duration-300 flex flex-col h-full ${isNew ? 'border-2 border-primary animate-pulse-border' : ''}`}>
@@ -60,7 +60,7 @@ const OrderCard: FC<OrderCardProps> = ({
       `}</style>
       <CardHeader className="pb-3">
         <div className="flex justify-between items-start">
-          <CardTitle className="text-lg font-headline">{displayOrderId}</CardTitle>
+          <CardTitle className="text-lg font-headline break-all">{displayOrderId.substring(0, 13)}...</CardTitle> {/* Exibe parte do UUID */}
           <Badge className={`${statusColors[order.status]} text-primary-foreground`}>{order.status}</Badge>
         </div>
         <div className="text-xs text-muted-foreground flex items-center mt-1">

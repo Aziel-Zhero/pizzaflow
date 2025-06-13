@@ -61,8 +61,8 @@ export interface Order {
   deliveredAt?: string;
   estimatedDeliveryTime?: string;
   deliveryPerson?: string; 
-  deliveryPersonId?: string | null;
-  deliveryPersonFull?: DeliveryPerson | null; // To hold the fetched DeliveryPerson object
+  // deliveryPersonId?: string | null; // Temporarily commented out
+  // deliveryPersonFull?: DeliveryPerson | null; // Temporarily commented out
   paymentType?: PaymentType | null; // Prisma enum will be mapped
   paymentStatus: PaymentStatus; // Prisma enum will be mapped
   notes?: string;

@@ -172,21 +172,20 @@ const mapDbOrderToOrderType = (dbOrder: any): Order => {
     };
   }
 
-  let deliveryPersonFullData: DeliveryPerson | null = null;
-  if (dbOrder.deliveryPersonAssigned) {
-    deliveryPersonFullData = {
-      ...dbOrder.deliveryPersonAssigned,
-      // Ensure dates are ISO strings if they are Date objects
-      createdAt: dbOrder.deliveryPersonAssigned.createdAt instanceof Date ? dbOrder.deliveryPersonAssigned.createdAt.toISOString() : String(dbOrder.deliveryPersonAssigned.createdAt),
-      updatedAt: dbOrder.deliveryPersonAssigned.updatedAt instanceof Date ? dbOrder.deliveryPersonAssigned.updatedAt.toISOString() : String(dbOrder.deliveryPersonAssigned.updatedAt),
-    };
-  }
+  // let deliveryPersonFullData: DeliveryPerson | null = null; // Temporarily set to null
+  // if (dbOrder.deliveryPersonAssigned) { // This relation is temporarily removed
+  //   deliveryPersonFullData = {
+  //     ...dbOrder.deliveryPersonAssigned,
+  //     createdAt: dbOrder.deliveryPersonAssigned.createdAt instanceof Date ? dbOrder.deliveryPersonAssigned.createdAt.toISOString() : String(dbOrder.deliveryPersonAssigned.createdAt),
+  //     updatedAt: dbOrder.deliveryPersonAssigned.updatedAt instanceof Date ? dbOrder.deliveryPersonAssigned.updatedAt.toISOString() : String(dbOrder.deliveryPersonAssigned.updatedAt),
+  //   };
+  // }
 
   return {
     ...dbOrder,
     items,
     coupon: couponData,
-    deliveryPersonFull: deliveryPersonFullData,
+    // deliveryPersonFull: deliveryPersonFullData, // Temporarily removed
     totalAmount: parseFloat(dbOrder.totalAmount as string),
     appliedCouponDiscount: dbOrder.appliedCouponDiscount ? parseFloat(dbOrder.appliedCouponDiscount as string) : null,
     createdAt: dbOrder.createdAt instanceof Date ? dbOrder.createdAt.toISOString() : String(dbOrder.createdAt),
@@ -203,7 +202,7 @@ export async function getOrders(): Promise<Order[]> {
       with: {
         items: true,
         coupon: true,
-        deliveryPersonAssigned: true, // Explicitly include the delivery person
+        // deliveryPersonAssigned: true, // Temporarily commented out
       },
       orderBy: [desc(ordersTable.createdAt)],
     });
@@ -223,7 +222,7 @@ export async function getOrderById(orderId: string): Promise<Order | null> {
       with: {
         items: true,
         coupon: true,
-        deliveryPersonAssigned: true, // Explicitly include the delivery person
+        // deliveryPersonAssigned: true, // Temporarily commented out
       },
     });
 
@@ -277,7 +276,7 @@ export async function assignDelivery(orderId: string, route: string, deliveryPer
       status: 'SaiuParaEntrega',
       optimizedRoute: route,
       deliveryPerson: deliveryPersonName,
-      deliveryPersonId: deliveryPersonId || null,
+      // deliveryPersonId: deliveryPersonId || null, // Temporarily commented out
       updatedAt: new Date(),
     };
 
@@ -315,7 +314,7 @@ export async function assignMultiDelivery(plan: OptimizeMultiDeliveryRouteOutput
         status: 'SaiuParaEntrega',
         optimizedRoute: leg.googleMapsUrl,
         deliveryPerson: deliveryPersonName,
-        deliveryPersonId: deliveryPersonId || null,
+        // deliveryPersonId: deliveryPersonId || null, // Temporarily commented out
         updatedAt: new Date(),
       };
 
@@ -379,7 +378,7 @@ export async function updateOrderDetails(
     }
 
     if (fullUpdatedOrderDataFromClient.deliveryPerson !== undefined) updatePayload.deliveryPerson = fullUpdatedOrderDataFromClient.deliveryPerson;
-    if (fullUpdatedOrderDataFromClient.deliveryPersonId !== undefined) updatePayload.deliveryPersonId = fullUpdatedOrderDataFromClient.deliveryPersonId;
+    // if (fullUpdatedOrderDataFromClient.deliveryPersonId !== undefined) updatePayload.deliveryPersonId = fullUpdatedOrderDataFromClient.deliveryPersonId; // Temporarily commented out
     if (fullUpdatedOrderDataFromClient.optimizedRoute !== undefined) updatePayload.optimizedRoute = fullUpdatedOrderDataFromClient.optimizedRoute;
 
     console.log("actions.ts: Update payload being sent to DB:", JSON.stringify(updatePayload, null, 2));
@@ -464,7 +463,7 @@ export async function addNewOrder(newOrderData: NewOrderClientData): Promise<Ord
     console.log("actions.ts: addNewOrder - Final totalAmount:", totalAmount);
     const newOrderId = crypto.randomUUID();
 
-    const orderToInsert = {
+    const orderToInsert: Partial<typeof ordersTable.$inferInsert> = { // Use Partial as deliveryPersonId is commented
       id: newOrderId,
       customerName: newOrderData.customerName,
       customerAddress: newOrderData.customerAddress,
@@ -523,7 +522,7 @@ export async function addNewOrder(newOrderData: NewOrderClientData): Promise<Ord
       with: {
         items: true,
         coupon: true,
-        deliveryPersonAssigned: true, // Explicitly include the delivery person
+        // deliveryPersonAssigned: true, // Temporarily commented out
       }
     });
 
@@ -776,7 +775,7 @@ export async function exportOrdersToCSV(): Promise<string> {
     console.log("actions.ts: Exporting orders to CSV with Drizzle...");
     try {
         const ordersData = await db.query.orders.findMany({
-            with: { items: true, coupon: true, deliveryPersonAssigned: true },
+            with: { items: true, coupon: true /*, deliveryPersonAssigned: true Temporarily removed */ },
             orderBy: [desc(ordersTable.createdAt)],
         });
 
@@ -805,7 +804,7 @@ export async function exportOrdersToCSV(): Promise<string> {
             csvString += `"${order.totalAmount.toFixed(2)}";`;
             csvString += `"${order.appliedCouponCode || ''}";`;
             csvString += `"${(order.appliedCouponDiscount || 0).toFixed(2)}";`;
-            csvString += `"${order.deliveryPersonFull?.name || order.deliveryPerson || ''}";`; // Use new field
+            csvString += `"${order.deliveryPerson || ''}";`; // Use simple deliveryPerson string
             csvString += `"${order.nfeLink || ''}";`;
             csvString += `"${(order.notes || '').replace(/"/g, '""')}";`;
             csvString += `"${itemsString.replace(/"/g, '""')}"\n`;
@@ -1034,19 +1033,19 @@ export async function updateDeliveryPerson(id: string, data: Partial<Omit<Delive
 export async function deleteDeliveryPerson(id: string): Promise<boolean> {
   console.log("actions.ts: Deleting delivery person. ID:", id);
   try {
-    const assignedOrders = await db.select({ orderId: ordersTable.id })
-        .from(ordersTable)
-        .where(and(
-            eq(ordersTable.deliveryPersonId, id),
-            not(inArray(ordersTable.status, ['Entregue', 'Cancelado']))
-        ))
-        .limit(1);
+    // const assignedOrders = await db.select({ orderId: ordersTable.id }) // Temporarily disabled check
+    //     .from(ordersTable)
+    //     .where(and(
+    //         eq(ordersTable.deliveryPersonId, id),
+    //         not(inArray(ordersTable.status, ['Entregue', 'Cancelado']))
+    //     ))
+    //     .limit(1);
 
-    if (assignedOrders.length > 0) {
-        const errorMessage = `Entregador está associado a pedidos ativos (ex: ${assignedOrders[0].orderId}) e não pode ser excluído.`;
-        console.warn(`actions.ts: Cannot delete delivery person ${id}, assigned to active order(s) like ${assignedOrders[0].orderId}.`);
-        throw new Error(errorMessage);
-    }
+    // if (assignedOrders.length > 0) {
+    //     const errorMessage = `Entregador está associado a pedidos ativos (ex: ${assignedOrders[0].orderId}) e não pode ser excluído.`;
+    //     console.warn(`actions.ts: Cannot delete delivery person ${id}, assigned to active order(s) like ${assignedOrders[0].orderId}.`);
+    //     throw new Error(errorMessage);
+    // }
 
     const result = await db.delete(deliveryPersonsTable).where(eq(deliveryPersonsTable.id, id)).returning({ id: deliveryPersonsTable.id });
     const success = result.length > 0;

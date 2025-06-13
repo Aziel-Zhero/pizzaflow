@@ -15,7 +15,7 @@ import type { ChartConfig } from '@/components/ui/chart';
 import { Badge } from '@/components/ui/badge';
 import SplitText from '@/components/common/SplitText';
 import { DatePickerWithRange, type DateRange } from '@/components/ui/date-picker-with-range'; // Import DatePickerWithRange
-import { addDays, format } from "date-fns"
+import { addDays, format, subDays } from "date-fns";
 
 
 const PIZZERIA_NAME = "Pizzaria Planeta";

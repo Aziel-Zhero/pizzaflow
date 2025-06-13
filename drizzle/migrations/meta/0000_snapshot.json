@@ -1,5 +1,5 @@
 {
-  "id": "7bf926d7-13ac-4f63-9f27-64e1f276b6e4",
+  "id": "c47e561c-5c9b-40c2-b19a-9d8d1818ec0d",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -43,8 +43,7 @@
           "name": "is_active",
           "type": "boolean",
           "primaryKey": false,
-          "notNull": true,
-          "default": true
+          "notNull": true
         },
         "expires_at": {
           "name": "expires_at",
@@ -62,8 +61,7 @@
           "name": "times_used",
           "type": "integer",
           "primaryKey": false,
-          "notNull": true,
-          "default": 0
+          "notNull": true
         },
         "min_order_amount": {
           "name": "min_order_amount",
@@ -75,29 +73,19 @@
           "name": "created_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
+          "notNull": false
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
+          "notNull": false
         }
       },
       "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "coupons_code_unique": {
-          "name": "coupons_code_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "code"
-          ]
-        }
-      }
+      "uniqueConstraints": {}
     },
     "public.delivery_persons": {
       "name": "delivery_persons",
@@ -131,22 +119,19 @@
           "name": "is_active",
           "type": "boolean",
           "primaryKey": false,
-          "notNull": true,
-          "default": true
+          "notNull": true
         },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
+          "notNull": false
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
+          "notNull": false
         }
       },
       "indexes": {},
@@ -198,8 +183,7 @@
           "name": "is_promotion",
           "type": "boolean",
           "primaryKey": false,
-          "notNull": false,
-          "default": false
+          "notNull": false
         },
         "data_ai_hint": {
           "name": "data_ai_hint",
@@ -211,15 +195,13 @@
           "name": "created_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
+          "notNull": false
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
+          "notNull": false
         }
       },
       "indexes": {},
@@ -275,34 +257,7 @@
         }
       },
       "indexes": {},
-      "foreignKeys": {
-        "order_items_order_id_orders_id_fk": {
-          "name": "order_items_order_id_orders_id_fk",
-          "tableFrom": "order_items",
-          "tableTo": "orders",
-          "columnsFrom": [
-            "order_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "order_items_menu_item_id_menu_items_id_fk": {
-          "name": "order_items_menu_item_id_menu_items_id_fk",
-          "tableFrom": "order_items",
-          "tableTo": "menu_items",
-          "columnsFrom": [
-            "menu_item_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
+      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {}
     },
@@ -351,22 +306,19 @@
           "type": "order_status",
           "typeSchema": "public",
           "primaryKey": false,
-          "notNull": true,
-          "default": "'Pendente'"
+          "notNull": true
         },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
+          "notNull": false
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
+          "notNull": false
         },
         "delivered_at": {
           "name": "delivered_at",
@@ -404,8 +356,7 @@
           "type": "payment_status",
           "typeSchema": "public",
           "primaryKey": false,
-          "notNull": true,
-          "default": "'Pendente'"
+          "notNull": true
         },
         "notes": {
           "name": "notes",
@@ -445,34 +396,7 @@
         }
       },
       "indexes": {},
-      "foreignKeys": {
-        "orders_delivery_person_id_delivery_persons_id_fk": {
-          "name": "orders_delivery_person_id_delivery_persons_id_fk",
-          "tableFrom": "orders",
-          "tableTo": "delivery_persons",
-          "columnsFrom": [
-            "delivery_person_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "orders_coupon_id_coupons_id_fk": {
-          "name": "orders_coupon_id_coupons_id_fk",
-          "tableFrom": "orders",
-          "tableTo": "coupons",
-          "columnsFrom": [
-            "coupon_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
+      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {}
     }

@@ -28,14 +28,13 @@ CREATE TABLE IF NOT EXISTS "coupons" (
 	"description" text,
 	"discount_type" "discount_type" NOT NULL,
 	"discount_value" numeric(10, 2) NOT NULL,
-	"is_active" boolean DEFAULT true NOT NULL,
+	"is_active" boolean NOT NULL,
 	"expires_at" timestamp with time zone,
 	"usage_limit" integer,
-	"times_used" integer DEFAULT 0 NOT NULL,
+	"times_used" integer NOT NULL,
 	"min_order_amount" numeric(10, 2),
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "coupons_code_unique" UNIQUE("code")
+	"created_at" timestamp with time zone,
+	"updated_at" timestamp with time zone
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "delivery_persons" (
@@ -43,9 +42,9 @@ CREATE TABLE IF NOT EXISTS "delivery_persons" (
 	"name" varchar(255) NOT NULL,
 	"vehicle_details" varchar(255),
 	"license_plate" varchar(20),
-	"is_active" boolean DEFAULT true NOT NULL,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+	"is_active" boolean NOT NULL,
+	"created_at" timestamp with time zone,
+	"updated_at" timestamp with time zone
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "menu_items" (
@@ -55,10 +54,10 @@ CREATE TABLE IF NOT EXISTS "menu_items" (
 	"category" varchar(100) NOT NULL,
 	"description" text,
 	"image_url" text,
-	"is_promotion" boolean DEFAULT false,
+	"is_promotion" boolean,
 	"data_ai_hint" varchar(255),
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+	"created_at" timestamp with time zone,
+	"updated_at" timestamp with time zone
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "order_items" (
@@ -78,15 +77,15 @@ CREATE TABLE IF NOT EXISTS "orders" (
 	"customer_cep" varchar(20),
 	"customer_reference_point" text,
 	"total_amount" numeric(10, 2) NOT NULL,
-	"status" "order_status" DEFAULT 'Pendente' NOT NULL,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"status" "order_status" NOT NULL,
+	"created_at" timestamp with time zone,
+	"updated_at" timestamp with time zone,
 	"delivered_at" timestamp with time zone,
 	"estimated_delivery_time" varchar(100),
 	"delivery_person" varchar(255),
 	"delivery_person_id" text,
 	"payment_type" "payment_type",
-	"payment_status" "payment_status" DEFAULT 'Pendente' NOT NULL,
+	"payment_status" "payment_status" NOT NULL,
 	"notes" text,
 	"optimized_route" text,
 	"nfe_link" text,
@@ -94,27 +93,3 @@ CREATE TABLE IF NOT EXISTS "orders" (
 	"applied_coupon_discount" numeric(10, 2),
 	"coupon_id" text
 );
---> statement-breakpoint
-DO $$ BEGIN
- ALTER TABLE "order_items" ADD CONSTRAINT "order_items_order_id_orders_id_fk" FOREIGN KEY ("order_id") REFERENCES "public"."orders"("id") ON DELETE cascade ON UPDATE no action;
-EXCEPTION
- WHEN duplicate_object THEN null;
-END $$;
---> statement-breakpoint
-DO $$ BEGIN
- ALTER TABLE "order_items" ADD CONSTRAINT "order_items_menu_item_id_menu_items_id_fk" FOREIGN KEY ("menu_item_id") REFERENCES "public"."menu_items"("id") ON DELETE restrict ON UPDATE no action;
-EXCEPTION
- WHEN duplicate_object THEN null;
-END $$;
---> statement-breakpoint
-DO $$ BEGIN
- ALTER TABLE "orders" ADD CONSTRAINT "orders_delivery_person_id_delivery_persons_id_fk" FOREIGN KEY ("delivery_person_id") REFERENCES "public"."delivery_persons"("id") ON DELETE set null ON UPDATE no action;
-EXCEPTION
- WHEN duplicate_object THEN null;
-END $$;
---> statement-breakpoint
-DO $$ BEGIN
- ALTER TABLE "orders" ADD CONSTRAINT "orders_coupon_id_coupons_id_fk" FOREIGN KEY ("coupon_id") REFERENCES "public"."coupons"("id") ON DELETE set null ON UPDATE no action;
-EXCEPTION
- WHEN duplicate_object THEN null;
-END $$;

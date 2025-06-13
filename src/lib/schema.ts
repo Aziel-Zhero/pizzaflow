@@ -1,3 +1,4 @@
+
 import { relations } from 'drizzle-orm';
 import {
   pgTable,
@@ -101,7 +102,7 @@ export const orderRelations = relations(orders, ({ many, one }) => ({
     references: [coupons.id],
   }),
   deliveryPersonAssigned: one(deliveryPersons, {
-    fields: [orders.deliveryPersonId],
+    fields: [orders.deliveryPersonId], // Corrigido aqui
     references: [deliveryPersons.id],
   }),
 }));

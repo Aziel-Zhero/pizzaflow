@@ -84,8 +84,8 @@ export async function addMenuItem(item: Omit<MenuItem, 'id' | 'createdAt' | 'upd
     return {
         ...newItemFromDb,
         price: parseFloat(newItemFromDb.price as string),
-        createdAt: newItemFromDb.createdAt.toISOString(),
-        updatedAt: newItemFromDb.updatedAt.toISOString(),
+        createdAt: newItemFromDb.createdAt!.toISOString(),
+        updatedAt: newItemFromDb.updatedAt!.toISOString(),
     };
   } catch (error) {
     console.error("actions.ts: Error adding menu item to DB with Drizzle:", error);
@@ -118,8 +118,8 @@ export async function updateMenuItem(updatedItem: MenuItem): Promise<MenuItem | 
     return {
         ...itemFromDb,
         price: parseFloat(itemFromDb.price as string),
-        createdAt: itemFromDb.createdAt.toISOString(),
-        updatedAt: itemFromDb.updatedAt.toISOString(),
+        createdAt: itemFromDb.createdAt!.toISOString(),
+        updatedAt: itemFromDb.updatedAt!.toISOString(),
     };
   } catch (error) {
     console.error("actions.ts: Error updating menu item in DB with Drizzle:", error);
@@ -175,11 +175,21 @@ const mapDbOrderToOrderType = (dbOrder: any): Order => {
       expiresAt: dbOrder.coupon.expiresAt ? (dbOrder.coupon.expiresAt instanceof Date ? dbOrder.coupon.expiresAt.toISOString() : String(dbOrder.coupon.expiresAt)) : undefined,
     };
   }
+  
+  let deliveryPersonFullData: DeliveryPerson | null = null;
+  if(dbOrder.deliveryPersonAssigned) {
+    deliveryPersonFullData = {
+        ...dbOrder.deliveryPersonAssigned,
+        createdAt: dbOrder.deliveryPersonAssigned.createdAt instanceof Date ? dbOrder.deliveryPersonAssigned.createdAt.toISOString() : String(dbOrder.deliveryPersonAssigned.createdAt),
+        updatedAt: dbOrder.deliveryPersonAssigned.updatedAt instanceof Date ? dbOrder.deliveryPersonAssigned.updatedAt.toISOString() : String(dbOrder.deliveryPersonAssigned.updatedAt),
+    }
+  }
 
   return {
     ...dbOrder,
     items,
     coupon: couponData,
+    deliveryPersonFull: deliveryPersonFullData,
     totalAmount: parseFloat(dbOrder.totalAmount as string),
     appliedCouponDiscount: dbOrder.appliedCouponDiscount ? parseFloat(dbOrder.appliedCouponDiscount as string) : null,
     createdAt: dbOrder.createdAt instanceof Date ? dbOrder.createdAt.toISOString() : String(dbOrder.createdAt),
@@ -196,7 +206,7 @@ export async function getOrders(): Promise<Order[]> {
       with: {
         items: true,
         coupon: true,
-        // deliveryPersonAssigned: true, // Temporariamente comentado
+        deliveryPersonAssigned: true, 
       },
       orderBy: [desc(ordersTable.createdAt)],
     });
@@ -216,7 +226,7 @@ export async function getOrderById(orderId: string): Promise<Order | null> {
       with: {
         items: true,
         coupon: true,
-        // deliveryPersonAssigned: true, // Temporariamente comentado
+        deliveryPersonAssigned: true,
       },
     });
 
@@ -270,7 +280,7 @@ export async function assignDelivery(orderId: string, route: string, deliveryPer
       status: 'SaiuParaEntrega',
       optimizedRoute: route,
       deliveryPerson: deliveryPersonName,
-      // deliveryPersonId: deliveryPersonId || null, // Temporariamente comentado
+      deliveryPersonId: deliveryPersonId || null, 
       updatedAt: new Date(),
     };
 
@@ -306,9 +316,9 @@ export async function assignMultiDelivery(plan: OptimizeMultiDeliveryRouteOutput
 
       const updatePayload: Partial<typeof ordersTable.$inferInsert> = {
         status: 'SaiuParaEntrega',
-        optimizedRoute: leg.geoapifyRoutePlannerUrl, // Use new field name
+        optimizedRoute: leg.geoapifyRoutePlannerUrl, 
         deliveryPerson: deliveryPersonName,
-        // deliveryPersonId: deliveryPersonId || null, // Temporariamente comentado
+        deliveryPersonId: deliveryPersonId || null, 
         updatedAt: new Date(),
       };
 
@@ -372,7 +382,7 @@ export async function updateOrderDetails(
     }
 
     if (fullUpdatedOrderDataFromClient.deliveryPerson !== undefined) updatePayload.deliveryPerson = fullUpdatedOrderDataFromClient.deliveryPerson;
-    // if (fullUpdatedOrderDataFromClient.deliveryPersonId !== undefined) updatePayload.deliveryPersonId = fullUpdatedOrderDataFromClient.deliveryPersonId; // Temporarily commented out
+    if (fullUpdatedOrderDataFromClient.deliveryPersonId !== undefined) updatePayload.deliveryPersonId = fullUpdatedOrderDataFromClient.deliveryPersonId;
     if (fullUpdatedOrderDataFromClient.optimizedRoute !== undefined) updatePayload.optimizedRoute = fullUpdatedOrderDataFromClient.optimizedRoute;
 
     console.log("actions.ts: Update payload being sent to DB:", JSON.stringify(updatePayload, null, 2));
@@ -431,8 +441,8 @@ export async function addNewOrder(newOrderData: NewOrderClientData): Promise<Ord
             ...couponFromDb,
             discountValue: parseFloat(couponFromDb.discountValue as string),
             minOrderAmount: couponFromDb.minOrderAmount ? parseFloat(couponFromDb.minOrderAmount as string) : undefined,
-            createdAt: couponFromDb.createdAt.toISOString(),
-            updatedAt: couponFromDb.updatedAt.toISOString(),
+            createdAt: couponFromDb.createdAt!.toISOString(),
+            updatedAt: couponFromDb.updatedAt!.toISOString(),
             expiresAt: couponFromDb.expiresAt ? couponFromDb.expiresAt.toISOString() : undefined,
           };
           console.log("actions.ts: addNewOrder - Coupon is applicable. Min order met.");
@@ -457,23 +467,23 @@ export async function addNewOrder(newOrderData: NewOrderClientData): Promise<Ord
     console.log("actions.ts: addNewOrder - Final totalAmount:", totalAmount);
     const newOrderId = crypto.randomUUID();
 
-    const orderToInsert = { // Não é Partial pois todos os campos obrigatórios estão aqui
+    const orderToInsert = { 
       id: newOrderId,
       customerName: newOrderData.customerName,
-      customerAddress: newOrderData.customerAddress,
+      customerAddress: newOrderData.customerAddress, // Usar o endereço construído
       customerCep: newOrderData.customerCep || null,
       customerReferencePoint: newOrderData.customerReferencePoint || null,
       totalAmount: String(totalAmount.toFixed(2)),
       status: 'Pendente' as OrderStatus,
       paymentType: newOrderData.paymentType || null,
-      paymentStatus: 'Pendente' as PaymentStatus, // PaymentStatus é notNull
+      paymentStatus: 'Pendente' as PaymentStatus, 
       notes: newOrderData.notes || null,
       appliedCouponCode: appliedCoupon ? appliedCoupon.code : null,
       appliedCouponDiscount: discountAmount > 0 ? String(discountAmount.toFixed(2)) : null,
       couponId: finalCouponId,
       createdAt: new Date(),
       updatedAt: new Date(),
-      // deliveryPersonId: null, // Temporariamente comentado
+      deliveryPersonId: null, // Inicialmente nulo
     };
     console.log("actions.ts: addNewOrder - Order data to insert:", JSON.stringify(orderToInsert, null, 2));
 
@@ -517,7 +527,7 @@ export async function addNewOrder(newOrderData: NewOrderClientData): Promise<Ord
       with: {
         items: true,
         coupon: true,
-        // deliveryPersonAssigned: true, // Temporariamente comentado
+        deliveryPersonAssigned: true, 
       }
     });
 
@@ -573,7 +583,7 @@ export async function simulateNewOrder(): Promise<Order> {
 
     const simulatedOrderData: NewOrderClientData = {
         customerName: `Cliente Simulado ${Math.floor(Math.random() * 1000)}`,
-        customerAddress: `${Math.floor(Math.random() * 1000)} Rua da Simulação, Bairro Teste, Cidade Alpha - TS`,
+        customerAddress: `${Math.floor(Math.random() * 1000)} Rua da Simulação, N° ${Math.floor(Math.random() * 100)}, Bairro Teste, Cidade Alpha - TS`,
         customerCep: "12345000",
         items: items,
         paymentType: Math.random() > 0.5 ? "Dinheiro" : "Cartao",
@@ -648,7 +658,6 @@ export async function optimizeRouteAction(pizzeriaAddress: string, customerAddre
     console.log("actions.ts: Optimizing single route with Geoapify for:", customerAddress);
     if (!GEOAPIFY_API_KEY) {
         console.error("Geoapify API Key not configured.");
-        // Fallback to Google Maps URL if Geoapify is not configured
         const mapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(pizzeriaAddress)}&destination=${encodeURIComponent(customerAddress)}&travelmode=driving`;
         return { optimizedRoute: mapsUrl, distance: undefined, time: undefined };
     }
@@ -658,11 +667,11 @@ export async function optimizeRouteAction(pizzeriaAddress: string, customerAddre
 
     if (!pizzeriaCoords) {
         console.error("Could not geocode pizzeria address:", pizzeriaAddress);
-        return { optimizedRoute: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(customerAddress)}` }; // Fallback
+        return { optimizedRoute: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(customerAddress)}` }; 
     }
     if (!customerCoords) {
         console.error("Could not geocode customer address:", customerAddress);
-        return { optimizedRoute: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(customerAddress)}` }; // Fallback
+        return { optimizedRoute: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(customerAddress)}` }; 
     }
 
     const routeInfo = await getRouteWithGeoapify(pizzeriaCoords, customerCoords);
@@ -674,7 +683,6 @@ export async function optimizeRouteAction(pizzeriaAddress: string, customerAddre
             time: routeInfo.time
         };
     } else {
-        // Fallback if Geoapify routing fails
         return { optimizedRoute: `https://www.google.com/maps/dir/?api=1&origin=${pizzeriaCoords.lat},${pizzeriaCoords.lon}&destination=${customerCoords.lat},${customerCoords.lon}&travelmode=driving` };
     }
 }
@@ -838,7 +846,7 @@ export async function exportOrdersToCSV(): Promise<string> {
     console.log("actions.ts: Exporting orders to CSV with Drizzle...");
     try {
         const ordersData = await db.query.orders.findMany({
-            with: { items: true, coupon: true /*, deliveryPersonAssigned: true Temporariamente comentado */ },
+            with: { items: true, coupon: true , deliveryPersonAssigned: true  },
             orderBy: [desc(ordersTable.createdAt)],
         });
 
@@ -867,7 +875,7 @@ export async function exportOrdersToCSV(): Promise<string> {
             csvString += `"${order.totalAmount.toFixed(2)}";`;
             csvString += `"${order.appliedCouponCode || ''}";`;
             csvString += `"${(order.appliedCouponDiscount || 0).toFixed(2)}";`;
-            csvString += `"${order.deliveryPerson || ''}";`;
+            csvString += `"${order.deliveryPerson || (order.deliveryPersonFull?.name || '')}";`;
             csvString += `"${order.nfeLink || ''}";`;
             csvString += `"${(order.notes || '').replace(/"/g, '""')}";`;
             csvString += `"${itemsString.replace(/"/g, '""')}"\n`;
@@ -886,32 +894,67 @@ export async function fetchAddressFromCep(cep: string): Promise<CepAddress | nul
     console.error("actions.ts: CEP inválido fornecido para fetchAddressFromCep:", cep);
     return null;
   }
-  console.log(`actions.ts: Buscando CEP ${cleanedCep} na BrasilAPI...`);
+  if (!GEOAPIFY_API_KEY) {
+    console.error("actions.ts: Geoapify API Key não configurada para busca de CEP.");
+    return null;
+  }
+  console.log(`actions.ts: Buscando CEP ${cleanedCep} na Geoapify...`);
   try {
-    const response = await fetch(`https://brasilapi.com.br/api/cep/v2/${cleanedCep}`);
-    if (response.status === 404) {
-      console.warn(`actions.ts: CEP ${cleanedCep} não encontrado na BrasilAPI.`);
-      return null;
-    }
+    // Usando a API de Geocodificação da Geoapify, que pode retornar múltiplos resultados. Pegamos o primeiro.
+    // Format=json é padrão, mas adicionado por clareza.
+    // Lang=pt para preferir resultados em português.
+    // Limit=1 para pegar o melhor resultado.
+    // type=postcode para focar em CEPs.
+    const url = `https://api.geoapify.com/v1/geocode/search?text=${cleanedCep}&type=postcode&limit=1&lang=pt&apiKey=${GEOAPIFY_API_KEY}`;
+    const response = await fetch(url);
+    
     if (!response.ok) {
         const errorBody = await response.text();
-        console.error(`actions.ts: BrasilAPI retornou erro ${response.status}. Body: ${errorBody}`);
-        throw new Error(`BrasilAPI retornou erro ${response.status}`);
+        console.error(`actions.ts: Geoapify Geocoding API retornou erro ${response.status}. Body: ${errorBody}`);
+        throw new Error(`Geoapify Geocoding API retornou erro ${response.status}`);
     }
-    const data = await response.json() as CepAddress;
-    console.log(`actions.ts: CEP ${cleanedCep} encontrado. Dados:`, JSON.stringify(data, null, 2));
+    const data = await response.json() as any;
 
-    const fullAddress = [data.street, data.neighborhood, data.city, data.state]
-        .filter(Boolean)
-        .join(', ')
-        .replace(/, $/, '');
+    if (data.features && data.features.length > 0) {
+      const properties = data.features[0].properties;
+      console.log(`actions.ts: Geoapify CEP ${cleanedCep} encontrado. Propriedades:`, JSON.stringify(properties, null, 2));
 
-    return { ...data, fullAddress: fullAddress || undefined };
+      // Geoapify estrutura os dados de forma diferente.
+      // street pode estar em 'street' ou 'road'.
+      // neighborhood (bairro) pode estar em 'suburb' ou precisa ser inferido.
+      // address_line1 pode conter rua e número, address_line2 pode ter bairro, cidade, estado.
+      const address: CepAddress = {
+        cep: properties.postcode || cleanedCep,
+        street: properties.street || properties.road || properties.address_line1?.split(',')[0].trim(), // Pega a primeira parte de address_line1 se street não existir
+        neighborhood: properties.suburb,
+        city: properties.city,
+        state: properties.state_code || properties.state, // state_code é mais provável ser a UF
+        country: properties.country_code,
+        lat: properties.lat,
+        lon: properties.lon,
+        address_line1: properties.address_line1,
+        address_line2: properties.address_line2,
+      };
+      
+      // Construir fullAddress para conveniência, similar à BrasilAPI
+      let fullAddressParts = [];
+      if (address.street) fullAddressParts.push(address.street);
+      // Número não vem separado na Geoapify por CEP, usuário deve inserir.
+      if (address.neighborhood) fullAddressParts.push(address.neighborhood);
+      if (address.city) fullAddressParts.push(address.city);
+      if (address.state) fullAddressParts.push(address.state);
+      address.fullAddress = fullAddressParts.join(', ').replace(/, $/, '');
+
+      return address;
+    } else {
+      console.warn(`actions.ts: CEP ${cleanedCep} não encontrado ou sem resultados na Geoapify.`);
+      return null;
+    }
 
   } catch (error) {
-    console.error("actions.ts: Erro ao buscar CEP na BrasilAPI:", error);
-    if (error instanceof Error && error.message.includes('fetch')) {
-         throw new Error("Erro de rede ao buscar CEP. Verifique sua conexão.");
+    console.error("actions.ts: Erro ao buscar CEP na Geoapify:", error);
+    if (error instanceof Error && (error.message.includes('fetch') || error.message.includes('NetworkError'))) {
+         throw new Error("Erro de rede ao buscar CEP. Verifique sua conexão e a chave da API Geoapify.");
     }
     return null;
   }
@@ -940,8 +983,8 @@ export async function getActiveCouponByCode(code: string): Promise<Coupon | null
             ...couponFromDb,
             discountValue: parseFloat(couponFromDb.discountValue as string),
             minOrderAmount: couponFromDb.minOrderAmount ? parseFloat(couponFromDb.minOrderAmount as string) : undefined,
-            createdAt: couponFromDb.createdAt.toISOString(),
-            updatedAt: couponFromDb.updatedAt.toISOString(),
+            createdAt: couponFromDb.createdAt!.toISOString(),
+            updatedAt: couponFromDb.updatedAt!.toISOString(),
             expiresAt: couponFromDb.expiresAt ? couponFromDb.expiresAt.toISOString() : undefined,
         };
     } catch (error) {
@@ -981,8 +1024,8 @@ export async function createCoupon(data: Omit<Coupon, 'id' | 'createdAt' | 'upda
             ...newCouponFromDb,
             discountValue: parseFloat(newCouponFromDb.discountValue as string),
             minOrderAmount: newCouponFromDb.minOrderAmount ? parseFloat(newCouponFromDb.minOrderAmount as string) : undefined,
-            createdAt: newCouponFromDb.createdAt.toISOString(),
-            updatedAt: newCouponFromDb.updatedAt.toISOString(),
+            createdAt: newCouponFromDb.createdAt!.toISOString(),
+            updatedAt: newCouponFromDb.updatedAt!.toISOString(),
             expiresAt: newCouponFromDb.expiresAt ? newCouponFromDb.expiresAt.toISOString() : undefined,
             timesUsed: newCouponFromDb.timesUsed,
         };
@@ -1004,8 +1047,8 @@ export async function getAllCoupons(): Promise<Coupon[]> {
       ...c,
       discountValue: parseFloat(c.discountValue as string),
       minOrderAmount: c.minOrderAmount ? parseFloat(c.minOrderAmount as string) : undefined,
-      createdAt: c.createdAt.toISOString(),
-      updatedAt: c.updatedAt.toISOString(),
+      createdAt: c.createdAt!.toISOString(),
+      updatedAt: c.updatedAt!.toISOString(),
       expiresAt: c.expiresAt ? c.expiresAt.toISOString() : undefined,
     }));
   } catch (error) {
@@ -1025,7 +1068,7 @@ export async function addDeliveryPerson(data: Omit<DeliveryPerson, 'id' | 'creat
       name: data.name,
       vehicleDetails: data.vehicleDetails || null,
       licensePlate: data.licensePlate || null,
-      isActive: true, // Default to active
+      isActive: true, 
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -1039,8 +1082,8 @@ export async function addDeliveryPerson(data: Omit<DeliveryPerson, 'id' | 'creat
     console.log("actions.ts: Delivery person added successfully. ID:", newPerson.id);
     return {
         ...newPerson,
-        createdAt: newPerson.createdAt.toISOString(),
-        updatedAt: newPerson.updatedAt.toISOString()
+        createdAt: newPerson.createdAt!.toISOString(),
+        updatedAt: newPerson.updatedAt!.toISOString()
     };
   } catch (error) {
     console.error("actions.ts: Error adding delivery person:", error);
@@ -1055,8 +1098,8 @@ export async function getDeliveryPersons(): Promise<DeliveryPerson[]> {
     console.log(`actions.ts: Found ${persons.length} delivery persons.`);
     return persons.map(p => ({
         ...p,
-        createdAt: p.createdAt.toISOString(),
-        updatedAt: p.updatedAt.toISOString()
+        createdAt: p.createdAt!.toISOString(),
+        updatedAt: p.updatedAt!.toISOString()
     }));
   } catch (error) {
     console.error("actions.ts: Error fetching delivery persons:", error);
@@ -1064,11 +1107,59 @@ export async function getDeliveryPersons(): Promise<DeliveryPerson[]> {
   }
 }
 
+
+export async function getAvailableDeliveryPersons(): Promise<DeliveryPerson[]> {
+    console.log("actions.ts: Fetching available delivery persons...");
+    try {
+        const allActivePersons = await db
+            .select()
+            .from(deliveryPersonsTable)
+            .where(eq(deliveryPersonsTable.isActive, true))
+            .orderBy(asc(deliveryPersonsTable.name));
+
+        const ordersOutForDelivery = await db
+            .selectDistinct({ deliveryPersonId: ordersTable.deliveryPersonId })
+            .from(ordersTable)
+            .where(and(
+                eq(ordersTable.status, 'SaiuParaEntrega'),
+                isNotNull(ordersTable.deliveryPersonId)
+            ));
+        
+        const busyPersonIds = new Set(ordersOutForDelivery.map(o => o.deliveryPersonId).filter(id => id !== null) as string[]);
+        
+        const availablePersons = allActivePersons.filter(person => !busyPersonIds.has(person.id));
+
+        console.log(`actions.ts: Found ${availablePersons.length} available delivery persons out of ${allActivePersons.length} active.`);
+        return availablePersons.map(p => ({
+            ...p,
+            createdAt: p.createdAt!.toISOString(),
+            updatedAt: p.updatedAt!.toISOString()
+        }));
+
+    } catch (error) {
+        console.error("actions.ts: Error fetching available delivery persons. This might be due to 'delivery_person_id' column issues.", error);
+        // Fallback: return all active persons if there's an error (likely related to the column)
+        try {
+            const persons = await db.select().from(deliveryPersonsTable).where(eq(deliveryPersonsTable.isActive, true)).orderBy(asc(deliveryPersonsTable.name));
+            console.warn("actions.ts: Falling back to returning all active delivery persons due to error.");
+            return persons.map(p => ({
+                ...p,
+                createdAt: p.createdAt!.toISOString(),
+                updatedAt: p.updatedAt!.toISOString()
+            }));
+        } catch (fallbackError) {
+            console.error("actions.ts: Error in fallback fetching all active delivery persons:", fallbackError);
+            return [];
+        }
+    }
+}
+
+
 export async function updateDeliveryPerson(id: string, data: Partial<Omit<DeliveryPerson, 'id' | 'createdAt' | 'updatedAt'>>): Promise<DeliveryPerson | null> {
   console.log("actions.ts: Updating delivery person. ID:", id, "Data:", JSON.stringify(data, null, 2));
   try {
     const updateData = { ...data, updatedAt: new Date() };
-    const { id: dataId, ...payload } = updateData as any; // Remove id from payload
+    const { id: dataId, ...payload } = updateData as any; 
     console.log("actions.ts: Delivery person update payload:", JSON.stringify(payload, null, 2));
 
     const [updatedPerson] = await db.update(deliveryPersonsTable)
@@ -1083,8 +1174,8 @@ export async function updateDeliveryPerson(id: string, data: Partial<Omit<Delive
     console.log("actions.ts: Delivery person updated successfully. ID:", updatedPerson.id);
      return {
         ...updatedPerson,
-        createdAt: updatedPerson.createdAt.toISOString(),
-        updatedAt: updatedPerson.updatedAt.toISOString()
+        createdAt: updatedPerson.createdAt!.toISOString(),
+        updatedAt: updatedPerson.updatedAt!.toISOString()
     };
   } catch (error) {
     console.error("actions.ts: Error updating delivery person:", error);
@@ -1095,19 +1186,28 @@ export async function updateDeliveryPerson(id: string, data: Partial<Omit<Delive
 export async function deleteDeliveryPerson(id: string): Promise<boolean> {
   console.log("actions.ts: Deleting delivery person. ID:", id);
   try {
-    // const assignedOrders = await db.select({ orderId: ordersTable.id }) // Temporariamente desabilitado
-    //     .from(ordersTable)
-    //     .where(and(
-    //         eq(ordersTable.deliveryPersonId, id),
-    //         not(inArray(ordersTable.status, ['Entregue', 'Cancelado']))
-    //     ))
-    //     .limit(1);
+    // Check if the delivery person is assigned to any non-finalized orders
+    // This check depends on delivery_person_id existing and being used.
+    let assignedOrdersCount = 0;
+    try {
+        const assignedOrdersResult = await db.select({ orderId: ordersTable.id }) 
+            .from(ordersTable)
+            .where(and(
+                eq(ordersTable.deliveryPersonId, id),
+                not(inArray(ordersTable.status, ['Entregue', 'Cancelado']))
+            ))
+            .limit(1);
+        assignedOrdersCount = assignedOrdersResult.length;
+    } catch (e) {
+        console.warn("actions.ts: Could not check for assigned orders to delivery person (likely delivery_person_id column issue). Proceeding with delete attempt carefully.");
+    }
 
-    // if (assignedOrders.length > 0) {
-    //     const errorMessage = `Entregador está associado a pedidos ativos (ex: ${assignedOrders[0].orderId}) e não pode ser excluído.`;
-    //     console.warn(`actions.ts: Cannot delete delivery person ${id}, assigned to active order(s) like ${assignedOrders[0].orderId}.`);
-    //     throw new Error(errorMessage);
-    // }
+
+    if (assignedOrdersCount > 0) {
+        const errorMessage = `Entregador está associado a pedidos ativos (ex: ${id}) e não pode ser excluído.`;
+        console.warn(`actions.ts: Cannot delete delivery person ${id}, assigned to active order(s).`);
+        throw new Error(errorMessage);
+    }
 
     const result = await db.delete(deliveryPersonsTable).where(eq(deliveryPersonsTable.id, id)).returning({ id: deliveryPersonsTable.id });
     const success = result.length > 0;

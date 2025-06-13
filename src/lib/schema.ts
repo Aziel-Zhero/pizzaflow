@@ -22,24 +22,24 @@ export const deliveryPersons = pgTable('delivery_persons', {
   name: varchar('name', { length: 255 }).notNull(),
   vehicleDetails: varchar('vehicle_details', { length: 255 }),
   licensePlate: varchar('license_plate', { length: 20 }),
-  isActive: boolean('is_active').notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }),
-  updatedAt: timestamp('updated_at', { withTimezone: true }),
+  isActive: boolean('is_active').notNull().default(true), // Default to active
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
 });
 
 export const coupons = pgTable('coupons', {
   id: text('id').primaryKey(),
-  code: varchar('code', { length: 100 }).notNull(),
+  code: varchar('code', { length: 100 }).notNull().unique(),
   description: text('description'),
   discountType: discountTypeEnum('discount_type').notNull(),
   discountValue: decimal('discount_value', { precision: 10, scale: 2 }).notNull(),
-  isActive: boolean('is_active').notNull(),
+  isActive: boolean('is_active').notNull().default(true),
   expiresAt: timestamp('expires_at', { withTimezone: true }),
   usageLimit: integer('usage_limit'),
-  timesUsed: integer('times_used').notNull(),
+  timesUsed: integer('times_used').notNull().default(0),
   minOrderAmount: decimal('min_order_amount', { precision: 10, scale: 2 }),
-  createdAt: timestamp('created_at', { withTimezone: true }),
-  updatedAt: timestamp('updated_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
 });
 
 export const menuItems = pgTable('menu_items', {
@@ -49,10 +49,10 @@ export const menuItems = pgTable('menu_items', {
   category: varchar('category', { length: 100 }).notNull(),
   description: text('description'),
   imageUrl: text('image_url'),
-  isPromotion: boolean('is_promotion'),
+  isPromotion: boolean('is_promotion').default(false),
   dataAiHint: varchar('data_ai_hint', { length: 255 }),
-  createdAt: timestamp('created_at', { withTimezone: true }),
-  updatedAt: timestamp('updated_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
 });
 
 export const orders = pgTable('orders', {
@@ -63,14 +63,14 @@ export const orders = pgTable('orders', {
   customerReferencePoint: text('customer_reference_point'),
   totalAmount: decimal('total_amount', { precision: 10, scale: 2 }).notNull(),
   status: orderStatusEnum('status').notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }),
-  updatedAt: timestamp('updated_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
   deliveredAt: timestamp('delivered_at', { withTimezone: true }),
   estimatedDeliveryTime: varchar('estimated_delivery_time', { length: 100 }),
-  deliveryPerson: varchar('delivery_person', { length: 255 }), // String name, kept for now
-  // deliveryPersonId: text('delivery_person_id'), // Temporarily commented out
+  deliveryPerson: varchar('delivery_person', { length: 255 }), 
+  deliveryPersonId: text('delivery_person_id'), // Chave estrangeira para deliveryPersons
   paymentType: paymentTypeEnum('payment_type'),
-  paymentStatus: paymentStatusEnum('payment_status').notNull(),
+  paymentStatus: paymentStatusEnum('payment_status').notNull().default('Pendente'),
   notes: text('notes'),
   optimizedRoute: text('optimized_route'),
   nfeLink: text('nfe_link'),
@@ -81,8 +81,8 @@ export const orders = pgTable('orders', {
 
 export const orderItems = pgTable('order_items', {
   id: text('id').primaryKey(),
-  orderId: text('order_id').notNull(),
-  menuItemId: text('menu_item_id').notNull(),
+  orderId: text('order_id').notNull().references(() => orders.id, { onDelete: 'cascade' }), // Adicionado onDelete cascade
+  menuItemId: text('menu_item_id').notNull().references(() => menuItems.id, { onDelete: 'restrict' }), // onDelete restrict para evitar excluir item de cardápio usado
   name: varchar('name', { length: 255 }).notNull(),
   quantity: integer('quantity').notNull(),
   price: decimal('price', { precision: 10, scale: 2 }).notNull(),
@@ -101,10 +101,10 @@ export const orderRelations = relations(orders, ({ many, one }) => ({
     fields: [orders.couponId],
     references: [coupons.id],
   }),
-  // deliveryPersonAssigned: one(deliveryPersons, { // Temporarily commented out
-  //   fields: [orders.deliveryPersonId],
-  //   references: [deliveryPersons.id],
-  // }),
+  deliveryPersonAssigned: one(deliveryPersons, {
+    fields: [orders.deliveryPersonId],
+    references: [deliveryPersons.id],
+  }),
 }));
 
 export const orderItemRelations = relations(orderItems, ({ one }) => ({
@@ -123,7 +123,7 @@ export const couponRelations = relations(coupons, ({ many }) => ({
 }));
 
 export const deliveryPersonRelations = relations(deliveryPersons, ({ many }) => ({
-  // orders: many(orders), // Temporarily commented out if it relied on deliveryPersonId FK
+  orders: many(orders, { relationName: 'assignedOrders' }), 
 }));
 
 export const schema = {
@@ -144,3 +144,4 @@ export const schema = {
   couponRelations,
   deliveryPersonRelations,
 };
+

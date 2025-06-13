@@ -15,10 +15,11 @@ import {
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
-import type { Order, OptimizeDeliveryRouteOutput } from '@/lib/types';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import type { Order, OptimizeDeliveryRouteOutput, DeliveryPerson } from '@/lib/types';
 import { PIZZERIA_ADDRESS } from '@/lib/types';
-import { optimizeRouteAction } from '@/app/actions';
-import { Loader2, MapIcon, ExternalLink, Clock, ArrowRightLeft } from 'lucide-react';
+import { optimizeRouteAction, getAvailableDeliveryPersons } from '@/app/actions';
+import { Loader2, MapIcon, ExternalLink, Clock, ArrowRightLeft, User } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
 
@@ -26,34 +27,55 @@ interface RouteOptimizationModalProps {
   order: Order | null;
   isOpen: boolean;
   onClose: () => void;
-  onAssignDelivery: (orderId: string, route: string, deliveryPerson: string) => void;
+  onAssignDelivery: (orderId: string, route: string, deliveryPersonName: string, deliveryPersonId?: string) => void;
 }
 
 const RouteOptimizationModal: FC<RouteOptimizationModalProps> = ({ order, isOpen, onClose, onAssignDelivery }) => {
   const [isLoading, setIsLoading] = useState(false);
+  const [isFetchingPersons, setIsFetchingPersons] = useState(false);
   const [routeDetails, setRouteDetails] = useState<OptimizeDeliveryRouteOutput | null>(null);
-  const [deliveryPerson, setDeliveryPerson] = useState('');
+  const [selectedDeliveryPersonId, setSelectedDeliveryPersonId] = useState<string>('');
+  const [availableDeliveryPersons, setAvailableDeliveryPersons] = useState<DeliveryPerson[]>([]);
   const { toast } = useToast();
 
   useEffect(() => {
+    const fetchPersons = async () => {
+        if (isOpen) {
+            setIsFetchingPersons(true);
+            try {
+                const persons = await getAvailableDeliveryPersons();
+                setAvailableDeliveryPersons(persons);
+                // Se o pedido já tem um entregador, pré-seleciona se ele estiver na lista de disponíveis
+                if (order?.deliveryPersonId && persons.some(p => p.id === order.deliveryPersonId)) {
+                    setSelectedDeliveryPersonId(order.deliveryPersonId);
+                } else if (persons.length > 0 && !order?.deliveryPersonId) {
+                    // Se nenhum entregador no pedido, mas há disponíveis, não pré-seleciona para forçar escolha.
+                    // Ou poderia pré-selecionar o primeiro: setSelectedDeliveryPersonId(persons[0].id);
+                }
+            } catch (error) {
+                toast({ title: "Erro", description: "Falha ao buscar entregadores disponíveis.", variant: "destructive" });
+            } finally {
+                setIsFetchingPersons(false);
+            }
+        }
+    };
+
     if (isOpen && order) {
-      setDeliveryPerson(order.deliveryPerson || '');
-      // Se já existe uma rota otimizada no pedido (pode ser de uma otimização anterior)
+      fetchPersons();
       if (order.optimizedRoute && order.optimizedRoute.includes("geoapify.com")) {
         setRouteDetails({ 
             optimizedRoute: order.optimizedRoute,
-            // Os campos distance e time não são armazenados no pedido, então seriam undefined aqui.
-            // O ideal seria a action também retornar esses dados se já existirem no pedido.
         });
       } else {
-        setRouteDetails(null); // Limpa rota anterior se não for Geoapify ou se for abrir modal
+        setRouteDetails(null); 
       }
     } else if (!isOpen) {
         setRouteDetails(null);
-        setDeliveryPerson('');
+        setSelectedDeliveryPersonId('');
+        setAvailableDeliveryPersons([]);
         setIsLoading(false);
     }
-  }, [order, isOpen]);
+  }, [order, isOpen, toast]);
 
   if (!order) return null;
 
@@ -84,12 +106,12 @@ const RouteOptimizationModal: FC<RouteOptimizationModalProps> = ({ order, isOpen
       toast({ title: "Rota Ausente", description: "Por favor, otimize a rota primeiro.", variant: "destructive" });
       return;
     }
-    if (!deliveryPerson.trim()) {
-      toast({ title: "Entregador Ausente", description: "Por favor, atribua um entregador.", variant: "destructive" });
+    const selectedPerson = availableDeliveryPersons.find(p => p.id === selectedDeliveryPersonId);
+    if (!selectedPerson) {
+      toast({ title: "Entregador Ausente", description: "Por favor, selecione um entregador.", variant: "destructive" });
       return;
     }
-    onAssignDelivery(order.id, routeDetails.optimizedRoute, deliveryPerson);
-    // onClose(); // O fechamento é gerenciado pelo componente pai após a ação.
+    onAssignDelivery(order.id, routeDetails.optimizedRoute, selectedPerson.name, selectedPerson.id);
   };
   
   const formatTime = (seconds: number = 0): string => {
@@ -149,13 +171,27 @@ const RouteOptimizationModal: FC<RouteOptimizationModalProps> = ({ order, isOpen
           )}
           
           <div className="space-y-2 mt-4">
-            <Label htmlFor="deliveryPerson">Atribuir Entregador(a)</Label>
-            <Input 
-              id="deliveryPerson" 
-              value={deliveryPerson} 
-              onChange={(e) => setDeliveryPerson(e.target.value)}
-              placeholder="Digite o nome do(a) entregador(a)"
-            />
+            <Label htmlFor="deliveryPersonSelect">Atribuir Entregador(a)</Label>
+            {isFetchingPersons ? (
+                <div className="flex items-center text-sm text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Carregando entregadores...</div>
+            ) : (
+                <Select value={selectedDeliveryPersonId} onValueChange={setSelectedDeliveryPersonId}>
+                    <SelectTrigger id="deliveryPersonSelect">
+                        <SelectValue placeholder="Selecione um entregador..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                        {availableDeliveryPersons.length === 0 && <SelectItem value="none" disabled>Nenhum entregador disponível</SelectItem>}
+                        {availableDeliveryPersons.map(person => (
+                            <SelectItem key={person.id} value={person.id}>
+                                <div className="flex items-center gap-2">
+                                    <User className="h-4 w-4 text-muted-foreground" />
+                                    {person.name}
+                                </div>
+                            </SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+            )}
           </div>
 
         </div>
@@ -163,7 +199,10 @@ const RouteOptimizationModal: FC<RouteOptimizationModalProps> = ({ order, isOpen
           <DialogClose asChild>
             <Button variant="outline">Cancelar</Button>
           </DialogClose>
-          <Button onClick={handleConfirmAssignment} disabled={!routeDetails?.optimizedRoute || !deliveryPerson.trim() || isLoading}>
+          <Button 
+            onClick={handleConfirmAssignment} 
+            disabled={!routeDetails?.optimizedRoute || !selectedDeliveryPersonId || isLoading || isFetchingPersons}
+          >
             Confirmar e Atribuir Entrega
           </Button>
         </DialogFooter>

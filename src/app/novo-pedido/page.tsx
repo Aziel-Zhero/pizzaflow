@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, ShoppingCart, Trash2, PlusCircle, MinusCircle, Send, Search, CreditCard, DollarSign, Smartphone, Edit2, Tag, Ticket, CheckCircle, AlertCircle } from 'lucide-react';
+import { Loader2, ShoppingCart, Trash2, PlusCircle, MinusCircle, Send, Search, CreditCard, DollarSign, Smartphone, Edit2, Tag, Ticket, CheckCircle, AlertCircle, Home } from 'lucide-react';
 import SplitText from '@/components/common/SplitText';
 import Image from 'next/image';
 import { Badge } from '@/components/ui/badge';
@@ -50,7 +50,15 @@ export default function NewOrderPage() {
 
   const [customerName, setCustomerName] = useState('');
   const [customerCep, setCustomerCep] = useState('');
-  const [customerAddress, setCustomerAddress] = useState('');
+  
+  // Novos campos de endereço detalhado
+  const [customerStreet, setCustomerStreet] = useState('');
+  const [customerNumber, setCustomerNumber] = useState('');
+  const [customerNeighborhood, setCustomerNeighborhood] = useState('');
+  const [customerCity, setCustomerCity] = useState('');
+  const [customerState, setCustomerState] = useState('');
+  
+  const [customerAddress, setCustomerAddress] = useState(''); // Mantido para o endereço completo final
   const [customerReferencePoint, setCustomerReferencePoint] = useState('');
   const [paymentType, setPaymentType] = useState<PaymentType | ''>('');
   const [generalNotes, setGeneralNotes] = useState('');
@@ -94,25 +102,50 @@ export default function NewOrderPage() {
     }
     setIsFetchingCep(true);
     try {
-      const addressResult = await fetchAddressFromCep(customerCep.replace(/\D/g, '')); // Envia CEP limpo
-      if (addressResult && addressResult.fullAddress) {
-        setCustomerAddress(addressResult.fullAddress);
-        toast({ title: "Endereço Encontrado!", description: "Endereço preenchido com base no CEP.", variant: "default" });
-      } else if (addressResult) { 
-         setCustomerAddress(`${addressResult.street || ''}, ${addressResult.neighborhood || ''}, ${addressResult.city || ''} - ${addressResult.state || ''}`);
-         toast({ title: "Endereço Parcial", description: "Complete o número e complemento, se necessário.", variant: "default" });
-      }
-      else { 
+      const addressResult = await fetchAddressFromCep(customerCep.replace(/\D/g, '')); 
+      if (addressResult) {
+        setCustomerStreet(addressResult.street || addressResult.address_line1 || '');
+        setCustomerNeighborhood(addressResult.neighborhood || '');
+        setCustomerCity(addressResult.city || '');
+        setCustomerState(addressResult.state || '');
+        
+        // Tentar extrair bairro, cidade, estado de address_line2 se street/address_line1 foi usado
+        if (addressResult.address_line1 && addressResult.address_line2) {
+            const parts = addressResult.address_line2.split(',').map(p => p.trim());
+            if (parts.length >= 2) { // Ex: Bairro, Cidade
+                 if(!customerNeighborhood) setCustomerNeighborhood(parts[0]);
+                 if(!customerCity) setCustomerCity(parts[1]);
+                 if(parts.length >=3 && !customerState) setCustomerState(parts[2]); // Se houver estado
+            } else if (parts.length === 1 && !customerNeighborhood) {
+                 setCustomerNeighborhood(parts[0]); // Pode ser só o bairro
+            }
+        }
+
+        toast({ title: "Endereço Encontrado!", description: "Verifique e preencha o número.", variant: "default" });
+      } else { 
         toast({ title: "CEP não encontrado", description: "Não foi possível encontrar o endereço para este CEP. Por favor, digite manualmente.", variant: "destructive" });
-        setCustomerAddress(''); 
+        setCustomerStreet(''); setCustomerNeighborhood(''); setCustomerCity(''); setCustomerState('');
       }
     } catch (error) {
       toast({ title: "Erro ao Buscar CEP", description: "Ocorreu um problema ao buscar o CEP.", variant: "destructive" });
-      setCustomerAddress('');
+      setCustomerStreet(''); setCustomerNeighborhood(''); setCustomerCity(''); setCustomerState('');
     } finally {
       setIsFetchingCep(false);
     }
   };
+  
+  // Atualiza o campo customerAddress (completo) sempre que os campos individuais mudarem
+  useEffect(() => {
+    const parts = [
+        customerStreet,
+        customerNumber,
+        customerNeighborhood,
+        customerCity,
+        customerState
+    ].filter(Boolean); // Remove partes vazias
+    setCustomerAddress(parts.join(', '));
+  }, [customerStreet, customerNumber, customerNeighborhood, customerCity, customerState]);
+
 
   const addToCart = (item: MenuItem) => {
     setCart(prevCart => {
@@ -217,8 +250,9 @@ export default function NewOrderPage() {
 
   const handleSubmitOrder = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!customerName.trim() || !customerAddress.trim()) {
-      toast({ title: "Campos Obrigatórios", description: "Nome e endereço do cliente são obrigatórios.", variant: "destructive" });
+    const finalAddress = [customerStreet, customerNumber, customerNeighborhood, customerCity, customerState].filter(Boolean).join(', ');
+    if (!customerName.trim() || !finalAddress.trim() || !customerNumber.trim()) {
+      toast({ title: "Campos Obrigatórios", description: "Nome, Endereço (com rua, número, bairro, cidade, estado) são obrigatórios.", variant: "destructive" });
       return;
     }
     if (cart.length === 0) {
@@ -246,8 +280,9 @@ export default function NewOrderPage() {
 
       const orderData: NewOrderClientData = {
         customerName,
-        customerAddress,
+        customerAddress: finalAddress,
         customerCep: customerCep.replace(/\D/g, ''), 
+        customerStreet, customerNumber, customerNeighborhood, customerCity, customerState, // Passando campos individuais
         customerReferencePoint,
         items: cart.map(ci => ({ 
             menuItemId: ci.menuItemId,
@@ -266,7 +301,8 @@ export default function NewOrderPage() {
       
       setCustomerName('');
       setCustomerCep('');
-      setCustomerAddress('');
+      setCustomerStreet(''); setCustomerNumber(''); setCustomerNeighborhood(''); setCustomerCity(''); setCustomerState('');
+      setCustomerAddress(''); // Limpa o endereço construído também
       setCustomerReferencePoint('');
       setPaymentType('');
       setGeneralNotes('');
@@ -306,8 +342,8 @@ export default function NewOrderPage() {
                   <Label htmlFor="customerName">Nome Completo</Label>
                   <Input id="customerName" value={customerName} onChange={e => setCustomerName(e.target.value)} required />
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2 items-end">
-                    <div>
+                <div className="grid grid-cols-1 sm:grid-cols-[2fr_1fr_auto] gap-2 items-end">
+                    <div className="sm:col-span-2">
                         <Label htmlFor="customerCep">CEP</Label>
                         <Input 
                             id="customerCep" 
@@ -319,13 +355,32 @@ export default function NewOrderPage() {
                     </div>
                     <Button type="button" onClick={handleCepSearch} disabled={isFetchingCep} className="w-full sm:w-auto">
                         {isFetchingCep ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
-                        Buscar Endereço
+                        Buscar
                     </Button>
                 </div>
-                <div>
-                  <Label htmlFor="customerAddress">Endereço Completo (Rua, Número, Bairro, Cidade - UF)</Label>
-                  <Input id="customerAddress" value={customerAddress} onChange={e => setCustomerAddress(e.target.value)} required 
-                         placeholder="Será preenchido pelo CEP ou digite manualmente"/>
+                <div className="grid grid-cols-1 sm:grid-cols-[3fr_1fr] gap-4">
+                    <div>
+                        <Label htmlFor="customerStreet">Rua / Avenida</Label>
+                        <Input id="customerStreet" value={customerStreet} onChange={e => setCustomerStreet(e.target.value)} placeholder="Ex: Rua das Palmeiras" required />
+                    </div>
+                    <div>
+                        <Label htmlFor="customerNumber">Número</Label>
+                        <Input id="customerNumber" value={customerNumber} onChange={e => setCustomerNumber(e.target.value)} placeholder="Ex: 123B" required />
+                    </div>
+                </div>
+                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                        <Label htmlFor="customerNeighborhood">Bairro</Label>
+                        <Input id="customerNeighborhood" value={customerNeighborhood} onChange={e => setCustomerNeighborhood(e.target.value)} placeholder="Ex: Centro" required />
+                    </div>
+                    <div>
+                        <Label htmlFor="customerCity">Cidade</Label>
+                        <Input id="customerCity" value={customerCity} onChange={e => setCustomerCity(e.target.value)} placeholder="Ex: Pizzalândia" required />
+                    </div>
+                     <div>
+                        <Label htmlFor="customerState">Estado (UF)</Label>
+                        <Input id="customerState" value={customerState} onChange={e => setCustomerState(e.target.value)} placeholder="Ex: SP" maxLength={2} required />
+                    </div>
                 </div>
                 <div>
                   <Label htmlFor="customerReferencePoint">Ponto de Referência (opcional)</Label>

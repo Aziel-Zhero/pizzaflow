@@ -60,9 +60,9 @@ export interface Order {
   updatedAt?: string;
   deliveredAt?: string;
   estimatedDeliveryTime?: string;
-  deliveryPerson?: string;
-  // deliveryPersonId?: string | null; // Comentado temporariamente devido a problemas de migração
-  // deliveryPersonFull?: DeliveryPerson | null; // Comentado temporariamente
+  deliveryPerson?: string; // Nome do entregador
+  deliveryPersonId?: string | null; // ID do entregador (FK)
+  deliveryPersonFull?: DeliveryPerson | null; // Objeto completo do entregador, se populado
   paymentType?: PaymentType | null; // Prisma enum will be mapped
   paymentStatus: PaymentStatus; // Prisma enum will be mapped
   notes?: string;
@@ -128,10 +128,16 @@ export interface NewOrderClientItemData {
     itemNotes?: string;
 }
 
+// Dados do cliente para um novo pedido, agora com campos de endereço mais detalhados
 export interface NewOrderClientData {
     customerName: string;
-    customerAddress: string;
+    customerAddress: string; // Este será o endereço completo construído
     customerCep?: string;
+    customerStreet?: string;
+    customerNumber?: string;
+    customerNeighborhood?: string;
+    customerCity?: string;
+    customerState?: string;
     customerReferencePoint?: string;
     items: NewOrderClientItemData[];
     paymentType: PaymentType;
@@ -139,22 +145,23 @@ export interface NewOrderClientData {
     couponCode?: string;
 }
 
+// Tipo para resposta da API de CEP (ex: BrasilAPI ou Geoapify)
+// Geoapify pode ter uma estrutura um pouco diferente, adaptar conforme necessário.
 export interface CepAddress {
   cep?: string;
-  street: string;
-  neighborhood: string;
-  city: string;
-  state: string;
-  fullAddress?: string;
-  location?: {
-    type: string;
-    coordinates?: {
-        longitude?: string;
-        latitude?: string;
-    }
-  }
-  service?: string;
+  street?: string;
+  address_line1?: string; // Geoapify usa address_line1
+  address_line2?: string; // Geoapify usa address_line2 (contém bairro, cidade, estado)
+  postcode?: string; // Geoapify
+  neighborhood?: string;
+  city?: string;
+  state?: string;
+  country?: string; // Geoapify
+  lon?: number; // Geoapify
+  lat?: number; // Geoapify
+  fullAddress?: string; // Campo construído para conveniência
 }
+
 
 export interface Coordinates {
   lat: number;

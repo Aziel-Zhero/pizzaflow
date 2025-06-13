@@ -14,11 +14,11 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
-import type { Order, MultiStopOrderInfo, OptimizeMultiDeliveryRouteOutput, OptimizeMultiDeliveryRouteInput, OptimizedRouteLeg } from '@/lib/types';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import type { Order, MultiStopOrderInfo, OptimizeMultiDeliveryRouteOutput, OptimizeMultiDeliveryRouteInput, OptimizedRouteLeg, DeliveryPerson } from '@/lib/types';
 import { PIZZERIA_ADDRESS } from '@/lib/types';
-import { optimizeMultiRouteAction } from '@/app/actions';
-import { Loader2, MapIcon, ExternalLink, Users, AlertTriangle, ArrowRightLeft, Clock } from 'lucide-react';
+import { optimizeMultiRouteAction, getAvailableDeliveryPersons } from '@/app/actions';
+import { Loader2, MapIcon, ExternalLink, Users, AlertTriangle, ArrowRightLeft, Clock, User as UserIcon } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -27,22 +27,43 @@ interface MultiRouteOptimizationModalProps {
   ordersToOptimize: Order[];
   isOpen: boolean;
   onClose: () => void;
-  onAssignMultiDelivery: (routePlan: OptimizeMultiDeliveryRouteOutput, deliveryPerson: string) => void;
+  onAssignMultiDelivery: (routePlan: OptimizeMultiDeliveryRouteOutput, deliveryPersonName: string, deliveryPersonId?: string) => void;
 }
 
 const MultiRouteOptimizationModal: FC<MultiRouteOptimizationModalProps> = ({ ordersToOptimize, isOpen, onClose, onAssignMultiDelivery }) => {
   const [isLoading, setIsLoading] = useState(false);
+  const [isFetchingPersons, setIsFetchingPersons] = useState(false);
   const [optimizedRoutePlan, setOptimizedRoutePlan] = useState<OptimizeMultiDeliveryRouteOutput | null>(null);
-  const [deliveryPerson, setDeliveryPerson] = useState('');
+  const [selectedDeliveryPersonId, setSelectedDeliveryPersonId] = useState<string>('');
+  const [availableDeliveryPersons, setAvailableDeliveryPersons] = useState<DeliveryPerson[]>([]);
   const { toast } = useToast();
 
   useEffect(() => {
+    const fetchPersons = async () => {
+        if (isOpen) {
+            setIsFetchingPersons(true);
+            try {
+                const persons = await getAvailableDeliveryPersons();
+                setAvailableDeliveryPersons(persons);
+                if (persons.length > 0) {
+                    // Option: pre-select the first available person or leave blank
+                    // setSelectedDeliveryPersonId(persons[0].id); 
+                }
+            } catch (error) {
+                toast({ title: "Erro", description: "Falha ao buscar entregadores disponíveis.", variant: "destructive" });
+            } finally {
+                setIsFetchingPersons(false);
+            }
+        }
+    };
     if (isOpen) {
         setOptimizedRoutePlan(null);
-        setDeliveryPerson('');
+        setSelectedDeliveryPersonId('');
+        setAvailableDeliveryPersons([]);
         setIsLoading(false);
+        fetchPersons();
     }
-  }, [isOpen]);
+  }, [isOpen, toast]);
 
   if (!isOpen || ordersToOptimize.length === 0) return null;
 
@@ -80,11 +101,12 @@ const MultiRouteOptimizationModal: FC<MultiRouteOptimizationModalProps> = ({ ord
       toast({ title: "Plano de Rota Ausente", description: "Por favor, otimize as rotas primeiro.", variant: "destructive" });
       return;
     }
-    if (!deliveryPerson.trim()) {
-      toast({ title: "Entregador Ausente", description: "Por favor, atribua um entregador.", variant: "destructive" });
+    const selectedPerson = availableDeliveryPersons.find(p => p.id === selectedDeliveryPersonId);
+    if (!selectedPerson) {
+      toast({ title: "Entregador Ausente", description: "Por favor, selecione um entregador.", variant: "destructive" });
       return;
     }
-    onAssignMultiDelivery(optimizedRoutePlan, deliveryPerson);
+    onAssignMultiDelivery(optimizedRoutePlan, selectedPerson.name, selectedPerson.id);
   };
   
   const formatTime = (seconds?: number): string => {
@@ -158,14 +180,27 @@ const MultiRouteOptimizationModal: FC<MultiRouteOptimizationModalProps> = ({ ord
           )}
           
           <div className="space-y-2 mt-4">
-            <Label htmlFor="multiDeliveryPerson">Atribuir Entregador(a) para este Plano</Label>
-            <Input 
-              id="multiDeliveryPerson" 
-              value={deliveryPerson} 
-              onChange={(e) => setDeliveryPerson(e.target.value)}
-              placeholder="Digite o nome do(a) entregador(a)"
-              disabled={!optimizedRoutePlan || optimizedRoutePlan.optimizedRoutePlan.length === 0}
-            />
+            <Label htmlFor="multiDeliveryPersonSelect">Atribuir Entregador(a) para este Plano</Label>
+            {isFetchingPersons ? (
+                 <div className="flex items-center text-sm text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Carregando entregadores...</div>
+            ) : (
+                <Select value={selectedDeliveryPersonId} onValueChange={setSelectedDeliveryPersonId} disabled={!optimizedRoutePlan || optimizedRoutePlan.optimizedRoutePlan.length === 0}>
+                    <SelectTrigger id="multiDeliveryPersonSelect">
+                        <SelectValue placeholder="Selecione um entregador disponível..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                        {availableDeliveryPersons.length === 0 && <SelectItem value="none" disabled>Nenhum entregador disponível</SelectItem>}
+                        {availableDeliveryPersons.map(person => (
+                            <SelectItem key={person.id} value={person.id}>
+                                <div className="flex items-center gap-2">
+                                    <UserIcon className="h-4 w-4 text-muted-foreground" />
+                                    {person.name}
+                                </div>
+                            </SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+            )}
           </div>
 
         </div>
@@ -176,7 +211,7 @@ const MultiRouteOptimizationModal: FC<MultiRouteOptimizationModalProps> = ({ ord
           </DialogClose>
           <Button 
             onClick={handleConfirmAssignment} 
-            disabled={!optimizedRoutePlan || optimizedRoutePlan.optimizedRoutePlan.length === 0 || !deliveryPerson.trim() || isLoading}
+            disabled={!optimizedRoutePlan || optimizedRoutePlan.optimizedRoutePlan.length === 0 || !selectedDeliveryPersonId || isLoading || isFetchingPersons}
           >
             Confirmar e Atribuir Entregas
           </Button>

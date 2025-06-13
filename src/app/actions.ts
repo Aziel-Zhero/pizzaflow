@@ -2,12 +2,12 @@
 "use server";
 
 import { db } from '@/lib/db';
-import { 
-    menuItems as menuItemsTable, 
-    orders as ordersTable, 
-    orderItems as orderItemsTable, 
+import {
+    menuItems as menuItemsTable,
+    orders as ordersTable,
+    orderItems as orderItemsTable,
     coupons as couponsTable,
-    deliveryPersons as deliveryPersonsTable 
+    deliveryPersons as deliveryPersonsTable
 } from '@/lib/schema';
 import { eq, and, desc, sql, gte, lte, or, isNull, isNotNull, count as dslCount, sum as dslSum, avg as dslAvg, like, asc, inArray, gt, SQL, not } from 'drizzle-orm';
 import type {
@@ -45,7 +45,7 @@ export async function getAvailableMenuItems(): Promise<MenuItem[]> {
     console.log(`actions.ts: Found ${itemsFromDb.length} menu items.`);
     return itemsFromDb.map(item => ({
         ...item,
-        price: parseFloat(item.price as string), 
+        price: parseFloat(item.price as string),
         createdAt: item.createdAt instanceof Date ? item.createdAt.toISOString() : String(item.createdAt),
         updatedAt: item.updatedAt instanceof Date ? item.updatedAt.toISOString() : String(item.updatedAt),
     }));
@@ -60,9 +60,9 @@ export async function addMenuItem(item: Omit<MenuItem, 'id' | 'createdAt' | 'upd
   try {
     const newId = crypto.randomUUID();
     const [newItemFromDb] = await db.insert(menuItemsTable).values({
-        id: newId, 
+        id: newId,
         name: item.name,
-        price: String(item.price), 
+        price: String(item.price),
         category: item.category,
         description: item.description || null,
         imageUrl: item.imageUrl || null,
@@ -71,7 +71,7 @@ export async function addMenuItem(item: Omit<MenuItem, 'id' | 'createdAt' | 'upd
         createdAt: new Date(),
         updatedAt: new Date(),
     }).returning();
-    
+
     if (!newItemFromDb) {
         console.error("actions.ts: Failed to create menu item, no data returned from DB insert.");
         throw new Error("Failed to create menu item, no data returned.");
@@ -95,13 +95,13 @@ export async function updateMenuItem(updatedItem: MenuItem): Promise<MenuItem | 
     const [itemFromDb] = await db.update(menuItemsTable)
         .set({
             name: updatedItem.name,
-            price: String(updatedItem.price), 
+            price: String(updatedItem.price),
             category: updatedItem.category,
             description: updatedItem.description || null,
             imageUrl: updatedItem.imageUrl || null,
             isPromotion: updatedItem.isPromotion || false,
             dataAiHint: updatedItem.dataAiHint || null,
-            updatedAt: new Date(), 
+            updatedAt: new Date(),
         })
         .where(eq(menuItemsTable.id, updatedItem.id))
         .returning();
@@ -119,7 +119,7 @@ export async function updateMenuItem(updatedItem: MenuItem): Promise<MenuItem | 
     };
   } catch (error) {
     console.error("actions.ts: Error updating menu item in DB with Drizzle:", error);
-    throw error; 
+    throw error;
   }
 }
 
@@ -145,7 +145,7 @@ export async function deleteMenuItem(itemId: string): Promise<boolean> {
     }
   } catch (error) {
     console.error("actions.ts: Error deleting menu item from DB with Drizzle:", error);
-    if (error instanceof Error) throw error; 
+    if (error instanceof Error) throw error;
     throw new Error("Unknown error deleting menu item.");
   }
 }
@@ -155,9 +155,9 @@ export async function deleteMenuItem(itemId: string): Promise<boolean> {
 const mapDbOrderToOrderType = (dbOrder: any): Order => {
   const items = (dbOrder.items || []).map((item: any) => ({
     ...item,
-    id: item.id || crypto.randomUUID(), 
-    price: parseFloat(item.price as string), 
-    menuItemId: item.menuItemId, 
+    id: item.id || crypto.randomUUID(),
+    price: parseFloat(item.price as string),
+    menuItemId: item.menuItemId,
   }));
 
   let couponData: Coupon | null = null;
@@ -171,11 +171,22 @@ const mapDbOrderToOrderType = (dbOrder: any): Order => {
       expiresAt: dbOrder.coupon.expiresAt ? (dbOrder.coupon.expiresAt instanceof Date ? dbOrder.coupon.expiresAt.toISOString() : String(dbOrder.coupon.expiresAt)) : undefined,
     };
   }
-  
+
+  let deliveryPersonFullData: DeliveryPerson | null = null;
+  if (dbOrder.deliveryPersonAssigned) {
+    deliveryPersonFullData = {
+      ...dbOrder.deliveryPersonAssigned,
+      // Ensure dates are ISO strings if they are Date objects
+      createdAt: dbOrder.deliveryPersonAssigned.createdAt instanceof Date ? dbOrder.deliveryPersonAssigned.createdAt.toISOString() : String(dbOrder.deliveryPersonAssigned.createdAt),
+      updatedAt: dbOrder.deliveryPersonAssigned.updatedAt instanceof Date ? dbOrder.deliveryPersonAssigned.updatedAt.toISOString() : String(dbOrder.deliveryPersonAssigned.updatedAt),
+    };
+  }
+
   return {
     ...dbOrder,
     items,
     coupon: couponData,
+    deliveryPersonFull: deliveryPersonFullData,
     totalAmount: parseFloat(dbOrder.totalAmount as string),
     appliedCouponDiscount: dbOrder.appliedCouponDiscount ? parseFloat(dbOrder.appliedCouponDiscount as string) : null,
     createdAt: dbOrder.createdAt instanceof Date ? dbOrder.createdAt.toISOString() : String(dbOrder.createdAt),
@@ -190,8 +201,9 @@ export async function getOrders(): Promise<Order[]> {
   try {
     const ordersFromDb = await db.query.orders.findMany({
       with: {
-        items: true, 
+        items: true,
         coupon: true,
+        deliveryPersonAssigned: true, // Explicitly include the delivery person
       },
       orderBy: [desc(ordersTable.createdAt)],
     });
@@ -207,10 +219,11 @@ export async function getOrderById(orderId: string): Promise<Order | null> {
   console.log(`actions.ts: Fetching order by ID ${orderId} with Drizzle...`);
   try {
     let orderFromDb = await db.query.orders.findFirst({
-      where: eq(ordersTable.id, orderId), 
+      where: eq(ordersTable.id, orderId),
       with: {
         items: true,
         coupon: true,
+        deliveryPersonAssigned: true, // Explicitly include the delivery person
       },
     });
 
@@ -230,7 +243,7 @@ export async function getOrderById(orderId: string): Promise<Order | null> {
 export async function updateOrderStatus(orderId: string, status: OrderStatus): Promise<Order | null> {
   console.log(`actions.ts: Updating status for order ${orderId} to ${status} with Drizzle...`);
   try {
-    const updatePayload: Partial<typeof ordersTable.$inferInsert> = { 
+    const updatePayload: Partial<typeof ordersTable.$inferInsert> = {
       status,
       updatedAt: new Date(),
     };
@@ -241,8 +254,8 @@ export async function updateOrderStatus(orderId: string, status: OrderStatus): P
 
     const [updatedDbOrderArr] = await db.update(ordersTable)
       .set(updatePayload)
-      .where(eq(ordersTable.id, orderId)) 
-      .returning({ id: ordersTable.id }); 
+      .where(eq(ordersTable.id, orderId))
+      .returning({ id: ordersTable.id });
 
     if (!updatedDbOrderArr || !updatedDbOrderArr.id) {
       console.warn(`actions.ts: Order ${orderId} not found for status update.`);
@@ -250,7 +263,7 @@ export async function updateOrderStatus(orderId: string, status: OrderStatus): P
     }
 
     console.log(`actions.ts: Status for order ${orderId} updated to ${status}. Fetching full order...`);
-    return getOrderById(orderId); 
+    return getOrderById(orderId);
   } catch (error) {
     console.error(`actions.ts: Error updating status for order ${orderId}:`, error);
     throw error;
@@ -261,16 +274,16 @@ export async function assignDelivery(orderId: string, route: string, deliveryPer
   console.log(`actions.ts: Assigning delivery for order ${orderId} to ${deliveryPersonName} (ID: ${deliveryPersonId || 'N/A'}) with Drizzle...`);
   try {
     const updatePayload: Partial<typeof ordersTable.$inferInsert> = {
-      status: 'SaiuParaEntrega', 
+      status: 'SaiuParaEntrega',
       optimizedRoute: route,
-      deliveryPerson: deliveryPersonName, 
+      deliveryPerson: deliveryPersonName,
       deliveryPersonId: deliveryPersonId || null,
       updatedAt: new Date(),
     };
 
     const [updatedDbOrderArr] = await db.update(ordersTable)
       .set(updatePayload)
-      .where(eq(ordersTable.id, orderId)) 
+      .where(eq(ordersTable.id, orderId))
       .returning({ id: ordersTable.id });
 
     if (!updatedDbOrderArr || !updatedDbOrderArr.id) {
@@ -300,27 +313,27 @@ export async function assignMultiDelivery(plan: OptimizeMultiDeliveryRouteOutput
 
       const updatePayload: Partial<typeof ordersTable.$inferInsert> = {
         status: 'SaiuParaEntrega',
-        optimizedRoute: leg.googleMapsUrl, 
-        deliveryPerson: deliveryPersonName, 
+        optimizedRoute: leg.googleMapsUrl,
+        deliveryPerson: deliveryPersonName,
         deliveryPersonId: deliveryPersonId || null,
         updatedAt: new Date(),
       };
-      
+
       const result = await db.update(ordersTable)
         .set(updatePayload)
-        .where(inArray(ordersTable.id, leg.orderIds)) 
+        .where(inArray(ordersTable.id, leg.orderIds))
         .returning({ id: ordersTable.id });
-      
+
       for (const updated of result) {
         if (updated.id) {
-            const fullOrder = await getOrderById(updated.id); 
+            const fullOrder = await getOrderById(updated.id);
             if (fullOrder) {
             successfullyUpdatedOrders.push(fullOrder);
             }
         }
       }
     }
-    
+
     console.log(`actions.ts: Multi-delivery assignment completed for ${successfullyUpdatedOrders.length} orders.`);
     return successfullyUpdatedOrders;
   } catch (error) {
@@ -330,13 +343,13 @@ export async function assignMultiDelivery(plan: OptimizeMultiDeliveryRouteOutput
 }
 
 export async function updateOrderDetails(
-  fullUpdatedOrderDataFromClient: Order 
+  fullUpdatedOrderDataFromClient: Order
 ): Promise<Order | null> {
-  const orderId = fullUpdatedOrderDataFromClient.id; 
+  const orderId = fullUpdatedOrderDataFromClient.id;
   console.log(`actions.ts: Updating details for order ${orderId} with Drizzle...Data:`, JSON.stringify(fullUpdatedOrderDataFromClient, null, 2));
   try {
     const updatePayload: Partial<typeof ordersTable.$inferInsert> = {
-      updatedAt: new Date(), 
+      updatedAt: new Date(),
     };
 
     if (fullUpdatedOrderDataFromClient.customerName !== undefined) updatePayload.customerName = fullUpdatedOrderDataFromClient.customerName;
@@ -347,7 +360,7 @@ export async function updateOrderDetails(
     if (fullUpdatedOrderDataFromClient.paymentStatus !== undefined) updatePayload.paymentStatus = fullUpdatedOrderDataFromClient.paymentStatus;
     if (fullUpdatedOrderDataFromClient.notes !== undefined) updatePayload.notes = fullUpdatedOrderDataFromClient.notes;
     if (fullUpdatedOrderDataFromClient.nfeLink !== undefined) updatePayload.nfeLink = fullUpdatedOrderDataFromClient.nfeLink;
-    
+
     if (fullUpdatedOrderDataFromClient.status !== undefined) {
       updatePayload.status = fullUpdatedOrderDataFromClient.status;
       if (fullUpdatedOrderDataFromClient.status === 'Entregue') {
@@ -355,11 +368,11 @@ export async function updateOrderDetails(
             where: eq(ordersTable.id, orderId),
             columns: { deliveredAt: true }
         });
-        if (currentOrderState && !currentOrderState.deliveredAt) { 
+        if (currentOrderState && !currentOrderState.deliveredAt) {
             updatePayload.deliveredAt = new Date();
         } else if (currentOrderState && currentOrderState.deliveredAt && fullUpdatedOrderDataFromClient.deliveredAt) {
              updatePayload.deliveredAt = parseISO(fullUpdatedOrderDataFromClient.deliveredAt);
-        } else if (!currentOrderState?.deliveredAt && fullUpdatedOrderDataFromClient.status === 'Entregue') { 
+        } else if (!currentOrderState?.deliveredAt && fullUpdatedOrderDataFromClient.status === 'Entregue') {
             updatePayload.deliveredAt = new Date();
         }
       }
@@ -378,7 +391,7 @@ export async function updateOrderDetails(
 
     const [updatedDbOrderArr] = await db.update(ordersTable)
       .set(updatePayload)
-      .where(eq(ordersTable.id, orderId)) 
+      .where(eq(ordersTable.id, orderId))
       .returning({ id: ordersTable.id });
 
     if (!updatedDbOrderArr || !updatedDbOrderArr.id) {
@@ -421,11 +434,11 @@ export async function addNewOrder(newOrderData: NewOrderClientData): Promise<Ord
         console.log("actions.ts: addNewOrder - Coupon found in DB:", JSON.stringify(couponFromDb, null, 2));
         const couponMinOrderAmount = couponFromDb.minOrderAmount ? parseFloat(couponFromDb.minOrderAmount as string) : 0;
         if (subtotal >= couponMinOrderAmount) {
-          appliedCoupon = { 
+          appliedCoupon = {
             ...couponFromDb,
             discountValue: parseFloat(couponFromDb.discountValue as string),
             minOrderAmount: couponFromDb.minOrderAmount ? parseFloat(couponFromDb.minOrderAmount as string) : undefined,
-            createdAt: couponFromDb.createdAt.toISOString(), 
+            createdAt: couponFromDb.createdAt.toISOString(),
             updatedAt: couponFromDb.updatedAt.toISOString(),
             expiresAt: couponFromDb.expiresAt ? couponFromDb.expiresAt.toISOString() : undefined,
           };
@@ -433,10 +446,10 @@ export async function addNewOrder(newOrderData: NewOrderClientData): Promise<Ord
 
           if (appliedCoupon.discountType === "PERCENTAGE") {
             discountAmount = subtotal * (appliedCoupon.discountValue / 100);
-          } else { 
+          } else {
             discountAmount = appliedCoupon.discountValue;
           }
-          discountAmount = Math.min(discountAmount, subtotal); 
+          discountAmount = Math.min(discountAmount, subtotal);
           finalCouponId = appliedCoupon.id;
           console.log("actions.ts: addNewOrder - Discount amount calculated:", discountAmount, "Final coupon ID:", finalCouponId);
         } else {
@@ -450,17 +463,17 @@ export async function addNewOrder(newOrderData: NewOrderClientData): Promise<Ord
     const totalAmount = subtotal - discountAmount;
     console.log("actions.ts: addNewOrder - Final totalAmount:", totalAmount);
     const newOrderId = crypto.randomUUID();
-    
+
     const orderToInsert = {
       id: newOrderId,
       customerName: newOrderData.customerName,
       customerAddress: newOrderData.customerAddress,
       customerCep: newOrderData.customerCep || null,
       customerReferencePoint: newOrderData.customerReferencePoint || null,
-      totalAmount: String(totalAmount.toFixed(2)), 
-      status: 'Pendente' as OrderStatus, 
-      paymentType: newOrderData.paymentType || null, 
-      paymentStatus: 'Pendente' as PaymentStatus, 
+      totalAmount: String(totalAmount.toFixed(2)),
+      status: 'Pendente' as OrderStatus,
+      paymentType: newOrderData.paymentType || null,
+      paymentStatus: 'Pendente' as PaymentStatus,
       notes: newOrderData.notes || null,
       appliedCouponCode: appliedCoupon ? appliedCoupon.code : null,
       appliedCouponDiscount: discountAmount > 0 ? String(discountAmount.toFixed(2)) : null,
@@ -483,9 +496,9 @@ export async function addNewOrder(newOrderData: NewOrderClientData): Promise<Ord
       id: crypto.randomUUID(),
       orderId: insertedOrder.id,
       menuItemId: item.menuItemId,
-      name: item.name, 
+      name: item.name,
       quantity: item.quantity,
-      price: String(item.price.toFixed(2)), 
+      price: String(item.price.toFixed(2)),
       itemNotes: item.itemNotes || null,
     }));
     console.log("actions.ts: addNewOrder - Order items to insert:", JSON.stringify(orderItemsToInsert, null, 2));
@@ -499,7 +512,7 @@ export async function addNewOrder(newOrderData: NewOrderClientData): Promise<Ord
     if (appliedCoupon && finalCouponId) {
       console.log("actions.ts: addNewOrder - Updating timesUsed for coupon ID:", finalCouponId);
       await tx.update(couponsTable)
-        .set({ timesUsed: sql`${couponsTable.timesUsed} + 1` }) 
+        .set({ timesUsed: sql`${couponsTable.timesUsed} + 1` })
         .where(eq(couponsTable.id, finalCouponId));
       console.log("actions.ts: addNewOrder - Coupon timesUsed updated.");
     }
@@ -510,6 +523,7 @@ export async function addNewOrder(newOrderData: NewOrderClientData): Promise<Ord
       with: {
         items: true,
         coupon: true,
+        deliveryPersonAssigned: true, // Explicitly include the delivery person
       }
     });
 
@@ -517,9 +531,9 @@ export async function addNewOrder(newOrderData: NewOrderClientData): Promise<Ord
         console.error("actions.ts: addNewOrder - Failed to retrieve the newly created order after transaction.");
         throw new Error("Failed to retrieve the newly created order.");
     }
-    
+
     console.log("actions.ts: New order added successfully with Drizzle. Order ID from DB:", fullOrder.id);
-    return mapDbOrderToOrderType(fullOrder); 
+    return mapDbOrderToOrderType(fullOrder);
   }).catch(error => {
     console.error("actions.ts: CRITICAL ERROR in addNewOrder transaction with Drizzle:", error);
     if (error instanceof Error) throw error;
@@ -539,8 +553,8 @@ export async function simulateNewOrder(): Promise<Order> {
     const items: NewOrderClientItemData[] = menuItemsForOrder.map((item, index) => ({
         menuItemId: item.id,
         name: item.name,
-        price: parseFloat(item.price as string), 
-        quantity: index === 0 ? 2 : 1, 
+        price: parseFloat(item.price as string),
+        quantity: index === 0 ? 2 : 1,
         itemNotes: index === 0 ? "Extra queijo em uma" : undefined,
     }));
 
@@ -551,7 +565,7 @@ export async function simulateNewOrder(): Promise<Order> {
                 eq(couponsTable.isActive, true),
                 or(isNull(couponsTable.expiresAt), gt(couponsTable.expiresAt, new Date())),
                 or(isNull(couponsTable.usageLimit), gt(couponsTable.usageLimit, couponsTable.timesUsed)),
-                isNull(couponsTable.minOrderAmount) 
+                isNull(couponsTable.minOrderAmount)
             )
         });
         if (firstActiveCoupon) {
@@ -570,11 +584,11 @@ export async function simulateNewOrder(): Promise<Order> {
         items: items,
         paymentType: Math.random() > 0.5 ? "Dinheiro" : "Cartao",
         notes: "Este é um pedido simulado gerado automaticamente.",
-        couponCode: couponCodeToTry, 
+        couponCode: couponCodeToTry,
     };
 
     console.log("actions.ts: simulateNewOrder - Simulated order data prepared:", JSON.stringify(simulatedOrderData, null, 2));
-    return addNewOrder(simulatedOrderData); 
+    return addNewOrder(simulatedOrderData);
 }
 
 // --- Funções de IA ---
@@ -608,8 +622,8 @@ export async function optimizeMultiRouteAction(input: OptimizeMultiDeliveryRoute
             description: `Rota individual para pedido ${order.orderId} (fallback de erro AI)`,
             googleMapsUrl: `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(input.pizzeriaAddress)}&destination=${encodeURIComponent(order.customerAddress)}&travelmode=driving`
         }));
-        return { 
-            optimizedRoutePlan: fallbackPlan, 
+        return {
+            optimizedRoutePlan: fallbackPlan,
             summary: "Otimização da IA falhou criticamente. Rotas individuais foram geradas."
         };
     }
@@ -622,18 +636,18 @@ export async function getDashboardAnalytics(
 ): Promise<DashboardAnalyticsData> {
   console.log("actions.ts: Fetching dashboard analytics with Drizzle...", period ? `Period: ${period.startDate.toISOString()} - ${period.endDate.toISOString()}` : "No period filter");
 
-  const dateFilter = period 
+  const dateFilter = period
     ? and(gte(ordersTable.createdAt, period.startDate), lte(ordersTable.createdAt, period.endDate))
-    : undefined; 
+    : undefined;
 
   const paidFilter = eq(ordersTable.paymentStatus, 'Pago');
-  const notCancelledFilter = not(eq(ordersTable.status, 'Cancelado')); 
+  const notCancelledFilter = not(eq(ordersTable.status, 'Cancelado'));
 
   let whereConditions: SQL | undefined = notCancelledFilter;
   if (dateFilter) {
       whereConditions = and(notCancelledFilter, dateFilter);
   }
-  
+
   const totalOrdersResult = await db.select({ value: dslCount(ordersTable.id) })
     .from(ordersTable)
     .where(whereConditions);
@@ -650,7 +664,7 @@ export async function getDashboardAnalytics(
     .where(revenueWhereConditions);
   const totalRevenue = totalRevenueResult[0]?.value || 0;
   console.log("actions.ts: Dashboard - totalRevenue:", totalRevenue);
-  
+
   const paidOrdersCountResult = await db.select({ value: dslCount(ordersTable.id) })
     .from(ordersTable)
     .where(revenueWhereConditions);
@@ -661,12 +675,12 @@ export async function getDashboardAnalytics(
 
   const ordersByStatusResult = await db.select({ status: ordersTable.status, count: dslCount(ordersTable.id) })
     .from(ordersTable)
-    .where(whereConditions) 
+    .where(whereConditions)
     .groupBy(ordersTable.status);
-    
+
   const statusColorsForCharts: Record<OrderStatus, string> = {
-    Pendente: "hsl(var(--chart-1))", EmPreparo: "hsl(var(--chart-2))", 
-    AguardandoRetirada: "hsl(var(--chart-3))", SaiuParaEntrega: "hsl(var(--chart-4))", 
+    Pendente: "hsl(var(--chart-1))", EmPreparo: "hsl(var(--chart-2))",
+    AguardandoRetirada: "hsl(var(--chart-3))", SaiuParaEntrega: "hsl(var(--chart-4))",
     Entregue: "hsl(var(--chart-5))", Cancelado: "hsl(var(--destructive))",
   };
   const ordersByStatus: OrdersByStatusData[] = ordersByStatusResult.map(s => ({
@@ -687,9 +701,9 @@ export async function getDashboardAnalytics(
     const dailyRevenueResult = await db.select({ value: dslSum(sql<number>`CAST(${ordersTable.totalAmount} AS numeric)`) })
       .from(ordersTable)
       .where(and(
-        notCancelledFilter, 
-        paidFilter, 
-        gte(ordersTable.createdAt, start), 
+        notCancelledFilter,
+        paidFilter,
+        gte(ordersTable.createdAt, start),
         lte(ordersTable.createdAt, end)
       ));
     dailyRevenue.push({
@@ -704,9 +718,9 @@ export async function getDashboardAnalytics(
   let deliveredWhereConditions: SQL | undefined = and(eq(ordersTable.status, 'Entregue'), isNotNull(ordersTable.deliveredAt), isNotNull(ordersTable.createdAt));
   if (dateFilter) { // Aplica filtro de período também aqui se fornecido
     deliveredWhereConditions = and(
-        eq(ordersTable.status, 'Entregue'), 
-        dateFilter, 
-        isNotNull(ordersTable.deliveredAt), 
+        eq(ordersTable.status, 'Entregue'),
+        dateFilter,
+        isNotNull(ordersTable.deliveredAt),
         isNotNull(ordersTable.createdAt)
     );
   }
@@ -714,10 +728,10 @@ export async function getDashboardAnalytics(
   const deliveredOrdersForTimeAvg = await db.select({ createdAt: ordersTable.createdAt, deliveredAt: ordersTable.deliveredAt })
     .from(ordersTable)
     .where(deliveredWhereConditions);
-  
+
   if (deliveredOrdersForTimeAvg.length > 0) {
     const totalDeliveryMinutes = deliveredOrdersForTimeAvg.reduce((sum, o) => {
-      if (!o.createdAt || !o.deliveredAt) return sum; 
+      if (!o.createdAt || !o.deliveredAt) return sum;
       const createdAtDate = o.createdAt instanceof Date ? o.createdAt : parseISO(o.createdAt as unknown as string);
       const deliveredAtDate = o.deliveredAt instanceof Date ? o.deliveredAt : parseISO(o.deliveredAt as unknown as string);
       return sum + differenceInMinutes(deliveredAtDate, createdAtDate);
@@ -762,7 +776,7 @@ export async function exportOrdersToCSV(): Promise<string> {
     console.log("actions.ts: Exporting orders to CSV with Drizzle...");
     try {
         const ordersData = await db.query.orders.findMany({
-            with: { items: true, coupon: true },
+            with: { items: true, coupon: true, deliveryPersonAssigned: true },
             orderBy: [desc(ordersTable.createdAt)],
         });
 
@@ -775,7 +789,7 @@ export async function exportOrdersToCSV(): Promise<string> {
         let csvString = "ID Pedido;Cliente;Endereço;CEP;Referência;Data;Status;Tipo Pag.;Status Pag.;Total;Cupom;Desconto Cupom;Entregador;Link NFe;Observações Gerais;Itens\n";
 
         for (const order of mappedOrders) {
-            const itemsString = order.items.map(item => 
+            const itemsString = order.items.map(item =>
                 `${item.name} (Qtd: ${item.quantity}, Preço Unit.: ${item.price.toFixed(2)}${item.itemNotes ? `, Obs: ${item.itemNotes.replace(/"/g, '""')}` : ''})`
             ).join(' | ');
 
@@ -791,7 +805,7 @@ export async function exportOrdersToCSV(): Promise<string> {
             csvString += `"${order.totalAmount.toFixed(2)}";`;
             csvString += `"${order.appliedCouponCode || ''}";`;
             csvString += `"${(order.appliedCouponDiscount || 0).toFixed(2)}";`;
-            csvString += `"${order.deliveryPerson || ''}";`;
+            csvString += `"${order.deliveryPersonFull?.name || order.deliveryPerson || ''}";`; // Use new field
             csvString += `"${order.nfeLink || ''}";`;
             csvString += `"${(order.notes || '').replace(/"/g, '""')}";`;
             csvString += `"${itemsString.replace(/"/g, '""')}"\n`;
@@ -805,7 +819,7 @@ export async function exportOrdersToCSV(): Promise<string> {
 }
 
 export async function fetchAddressFromCep(cep: string): Promise<CepAddress | null> {
-  const cleanedCep = cep.replace(/\D/g, ''); 
+  const cleanedCep = cep.replace(/\D/g, '');
   if (cleanedCep.length !== 8) {
     console.error("actions.ts: CEP inválido fornecido para fetchAddressFromCep:", cep);
     return null;
@@ -822,9 +836,9 @@ export async function fetchAddressFromCep(cep: string): Promise<CepAddress | nul
         console.error(`actions.ts: BrasilAPI retornou erro ${response.status}. Body: ${errorBody}`);
         throw new Error(`BrasilAPI retornou erro ${response.status}`);
     }
-    const data = await response.json() as CepAddress; 
+    const data = await response.json() as CepAddress;
     console.log(`actions.ts: CEP ${cleanedCep} encontrado. Dados:`, JSON.stringify(data, null, 2));
-    
+
     const fullAddress = [data.street, data.neighborhood, data.city, data.state]
         .filter(Boolean) // Remove partes vazias
         .join(', ')
@@ -837,7 +851,7 @@ export async function fetchAddressFromCep(cep: string): Promise<CepAddress | nul
     if (error instanceof Error && error.message.includes('fetch')) {
          throw new Error("Erro de rede ao buscar CEP. Verifique sua conexão.");
     }
-    return null; 
+    return null;
   }
 }
 
@@ -849,8 +863,8 @@ export async function getActiveCouponByCode(code: string): Promise<Coupon | null
             where: and(
                 eq(couponsTable.code, code),
                 eq(couponsTable.isActive, true),
-                or(isNull(couponsTable.expiresAt), gt(couponsTable.expiresAt, new Date())), 
-                or(isNull(couponsTable.usageLimit), gt(couponsTable.usageLimit, couponsTable.timesUsed)) 
+                or(isNull(couponsTable.expiresAt), gt(couponsTable.expiresAt, new Date())),
+                or(isNull(couponsTable.usageLimit), gt(couponsTable.usageLimit, couponsTable.timesUsed))
             )
         });
 
@@ -858,7 +872,7 @@ export async function getActiveCouponByCode(code: string): Promise<Coupon | null
             console.warn(`actions.ts: Active coupon ${code} not found or not usable.`);
             return null;
         }
-        
+
         console.log(`actions.ts: Active coupon ${code} found.`);
         return {
             ...couponFromDb,
@@ -883,9 +897,9 @@ export async function createCoupon(data: Omit<Coupon, 'id' | 'createdAt' | 'upda
             code: data.code,
             description: data.description || null,
             discountType: data.discountType,
-            discountValue: String(data.discountValue), 
-            isActive: data.isActive !== undefined ? data.isActive : true, 
-            expiresAt: data.expiresAt ? parseISO(data.expiresAt) : null, 
+            discountValue: String(data.discountValue),
+            isActive: data.isActive !== undefined ? data.isActive : true,
+            expiresAt: data.expiresAt ? parseISO(data.expiresAt) : null,
             usageLimit: data.usageLimit,
             minOrderAmount: data.minOrderAmount ? String(data.minOrderAmount) : null,
             timesUsed: 0,
@@ -901,7 +915,7 @@ export async function createCoupon(data: Omit<Coupon, 'id' | 'createdAt' | 'upda
             throw new Error("Failed to create coupon, no data returned.");
         }
         console.log("actions.ts: Coupon created successfully with Drizzle:", newCouponFromDb.id);
-        return { 
+        return {
             ...newCouponFromDb,
             discountValue: parseFloat(newCouponFromDb.discountValue as string),
             minOrderAmount: newCouponFromDb.minOrderAmount ? parseFloat(newCouponFromDb.minOrderAmount as string) : undefined,
@@ -937,7 +951,7 @@ export async function getAllCoupons(): Promise<Coupon[]> {
     throw error;
   }
 }
-    
+
 
 // --- Funções de Entregadores (DeliveryPersons) ---
 export async function addDeliveryPerson(data: Omit<DeliveryPerson, 'id' | 'createdAt' | 'updatedAt' | 'isActive'>): Promise<DeliveryPerson> {
@@ -949,7 +963,7 @@ export async function addDeliveryPerson(data: Omit<DeliveryPerson, 'id' | 'creat
       name: data.name,
       vehicleDetails: data.vehicleDetails || null,
       licensePlate: data.licensePlate || null,
-      isActive: true, 
+      isActive: true,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -1044,4 +1058,3 @@ export async function deleteDeliveryPerson(id: string): Promise<boolean> {
     throw new Error("Unknown error deleting delivery person.");
   }
 }
-    

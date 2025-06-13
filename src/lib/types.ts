@@ -1,5 +1,4 @@
 
-
 // Enums from Prisma will be imported or mapped if needed client-side
 // For now, these string unions are fine for client-side logic.
 export type OrderStatus = "Pendente" | "Em Preparo" | "AguardandoRetirada" | "Saiu para Entrega" | "Entregue" | "Cancelado";
@@ -16,7 +15,7 @@ export interface OrderItem {
   price: number; // Price per item at the time of order (Decimal in DB, number in JS)
   itemNotes?: string;
   // Campos do MenuItem para exibição no carrinho, se necessário, sem precisar de join complexo no client
-  imageUrl?: string; 
+  imageUrl?: string;
   dataAiHint?: string;
   isPromotion?: boolean;
 }
@@ -33,7 +32,19 @@ export interface Coupon {
   timesUsed: number;
   minOrderAmount?: number;
   // Relação não populada por padrão na maioria das buscas, mas útil para tipos
-  orders?: Order[]; 
+  orders?: Order[];
+}
+
+// Tipos para Entregadores
+export interface DeliveryPerson {
+  id: string;
+  name: string;
+  vehicleDetails?: string | null;
+  licensePlate?: string | null;
+  isActive: boolean;
+  createdAt: string; // ISO string
+  updatedAt: string; // ISO string
+  // orders?: Order[]; // Relação se necessário
 }
 
 export interface Order {
@@ -49,14 +60,15 @@ export interface Order {
   updatedAt?: string;
   deliveredAt?: string;
   estimatedDeliveryTime?: string;
-  deliveryPerson?: string; // Manter por enquanto, será substituído por deliveryPersonId
-  deliveryPersonId?: string | null; // Futuro: FK para a tabela deliveryPersons
+  deliveryPerson?: string; 
+  deliveryPersonId?: string | null;
+  deliveryPersonFull?: DeliveryPerson | null; // To hold the fetched DeliveryPerson object
   paymentType?: PaymentType | null; // Prisma enum will be mapped
   paymentStatus: PaymentStatus; // Prisma enum will be mapped
   notes?: string;
   optimizedRoute?: string;
   nfeLink?: string | null; // Novo campo para link da NFe
-  
+
   appliedCouponCode?: string | null;
   appliedCouponDiscount?: number | null; // Decimal in DB, number in JS
   couponId?: string | null;
@@ -72,8 +84,8 @@ export interface DailyRevenue {
 }
 
 export interface OrdersByStatusData {
-  name: OrderStatus; 
-  value: number; 
+  name: OrderStatus;
+  value: number;
   fill: string; // Cor para o gráfico
 }
 
@@ -100,7 +112,7 @@ export interface MenuItem {
   id: string;
   name: string;
   price: number; // Decimal in DB, number in JS
-  category: string; 
+  category: string;
   description?: string;
   imageUrl?: string;
   isPromotion?: boolean;
@@ -124,7 +136,7 @@ export interface NewOrderClientData {
     customerAddress: string;
     customerCep?: string;
     customerReferencePoint?: string;
-    items: NewOrderClientItemData[]; 
+    items: NewOrderClientItemData[];
     paymentType: PaymentType;
     notes?: string;
     couponCode?: string;
@@ -136,7 +148,7 @@ export interface CepAddress {
   neighborhood: string;
   city: string;
   state: string;
-  fullAddress?: string; 
+  fullAddress?: string;
   // Campos da BrasilAPI V2
   location?: {
     type: string;
@@ -160,12 +172,12 @@ export interface OptimizeMultiDeliveryRouteInput {
 
 export interface OptimizedRouteLeg {
   orderIds: string[]; // Continuará usando os UUIDs internos
-  description: string; 
-  googleMapsUrl: string; 
+  description: string;
+  googleMapsUrl: string;
 }
 export interface OptimizeMultiDeliveryRouteOutput {
-  optimizedRoutePlan: OptimizedRouteLeg[]; 
-  summary?: string; 
+  optimizedRoutePlan: OptimizedRouteLeg[];
+  summary?: string;
 }
 
 export interface OptimizeDeliveryRouteInput {
@@ -176,17 +188,3 @@ export interface OptimizeDeliveryRouteInput {
 export interface OptimizeDeliveryRouteOutput {
   optimizedRoute: string; // URL
 }
-
-
-// Tipos para Entregadores
-export interface DeliveryPerson {
-  id: string;
-  name: string;
-  vehicleDetails?: string | null;
-  licensePlate?: string | null;
-  isActive: boolean;
-  createdAt: string; // ISO string
-  updatedAt: string; // ISO string
-  // orders?: Order[]; // Relação se necessário
-}
-

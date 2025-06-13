@@ -15,10 +15,10 @@ import {
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
-import type { Order, MultiStopOrderInfo, OptimizeMultiDeliveryRouteOutput, OptimizeMultiDeliveryRouteInput } from '@/lib/types';
+import type { Order, MultiStopOrderInfo, OptimizeMultiDeliveryRouteOutput, OptimizeMultiDeliveryRouteInput, OptimizedRouteLeg } from '@/lib/types';
 import { PIZZERIA_ADDRESS } from '@/lib/types';
 import { optimizeMultiRouteAction } from '@/app/actions';
-import { Loader2, MapIcon, ExternalLink, Users, AlertTriangle } from 'lucide-react';
+import { Loader2, MapIcon, ExternalLink, Users, AlertTriangle, ArrowRightLeft, Clock } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -37,19 +37,18 @@ const MultiRouteOptimizationModal: FC<MultiRouteOptimizationModalProps> = ({ ord
   const { toast } = useToast();
 
   useEffect(() => {
-    // Reset state when modal opens or orders change
     if (isOpen) {
         setOptimizedRoutePlan(null);
         setDeliveryPerson('');
         setIsLoading(false);
     }
-  }, [isOpen, ordersToOptimize]);
+  }, [isOpen]);
 
   if (!isOpen || ordersToOptimize.length === 0) return null;
 
   const handleOptimizeRoutes = async () => {
     setIsLoading(true);
-    setOptimizedRoutePlan(null); // Clear previous plan
+    setOptimizedRoutePlan(null);
     try {
       const orderInfos: MultiStopOrderInfo[] = ordersToOptimize.map(o => ({
         orderId: o.id,
@@ -64,13 +63,13 @@ const MultiRouteOptimizationModal: FC<MultiRouteOptimizationModalProps> = ({ ord
       const result = await optimizeMultiRouteAction(input);
       setOptimizedRoutePlan(result);
       if (result.optimizedRoutePlan && result.optimizedRoutePlan.length > 0) {
-        toast({ title: "Rotas Otimizadas!", description: result.summary || "O plano de rotas de entrega foi gerado." });
+        toast({ title: "Rotas Otimizadas com Geoapify!", description: result.summary || "O plano de rotas de entrega foi gerado." });
       } else {
-        toast({ title: "Otimização Parcial", description: result.summary || "Não foi possível otimizar todas as rotas como esperado.", variant: "default"});
+        toast({ title: "Otimização Parcial ou Falha", description: result.summary || "Não foi possível otimizar as rotas como esperado.", variant: result.summary?.toLowerCase().includes("erro") ? "destructive" : "default"});
       }
     } catch (error) {
-      console.error("Erro ao otimizar múltiplas rotas:", error);
-      toast({ title: "Erro na Otimização", description: "Falha ao otimizar rotas. Verifique os endereços ou tente novamente.", variant: "destructive" });
+      console.error("Erro ao otimizar múltiplas rotas com Geoapify:", error);
+      toast({ title: "Erro na Otimização (Geoapify)", description: "Falha ao otimizar rotas. Verifique os endereços ou tente novamente.", variant: "destructive" });
     } finally {
       setIsLoading(false);
     }
@@ -87,42 +86,65 @@ const MultiRouteOptimizationModal: FC<MultiRouteOptimizationModalProps> = ({ ord
     }
     onAssignMultiDelivery(optimizedRoutePlan, deliveryPerson);
   };
+  
+  const formatTime = (seconds?: number): string => {
+    if (seconds === undefined || seconds < 0) return 'N/A';
+    if (seconds < 60) return `${Math.round(seconds)} seg`;
+    const minutes = Math.floor(seconds / 60);
+    return `${minutes} min`;
+  };
+
+  const formatDistance = (meters?: number): string => {
+    if (meters === undefined || meters < 0) return 'N/A';
+    if (meters < 1000) return `${Math.round(meters)} m`;
+    const kilometers = (meters / 1000).toFixed(1);
+    return `${kilometers} km`;
+  };
+
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-lg md:max-w-2xl">
         <DialogHeader>
-          <DialogTitle className="font-headline flex items-center"><MapIcon className="mr-2 h-5 w-5 text-primary"/>Otimizar Múltiplas Rotas</DialogTitle>
+          <DialogTitle className="font-headline flex items-center"><MapIcon className="mr-2 h-5 w-5 text-primary"/>Otimizar Múltiplas Rotas (Geoapify)</DialogTitle>
           <DialogDescription>
-            Otimize e atribua entregas em lote para {ordersToOptimize.length} pedido(s) aguardando retirada.
+            Otimize e atribua entregas para {ordersToOptimize.length} pedido(s) aguardando retirada.
           </DialogDescription>
         </DialogHeader>
         <ScrollArea className="max-h-[60vh] p-1">
         <div className="grid gap-4 py-4 pr-4">
           <div className="space-y-2">
             <Label>Pedidos Selecionados para Otimização:</Label>
-            <ul className="list-disc pl-5 text-sm max-h-32 overflow-y-auto bg-muted p-2 rounded-md">
+            <ul className="list-disc pl-5 text-xs max-h-28 overflow-y-auto bg-muted p-2 rounded-md">
               {ordersToOptimize.map(order => (
-                <li key={order.id}>{order.id} - {order.customerName} ({order.customerAddress})</li>
+                <li key={order.id}>{order.id.substring(0,8)}... - {order.customerName} ({order.customerAddress.substring(0,30)}...)</li>
               ))}
             </ul>
           </div>
           
-          <Button onClick={handleOptimizeRoutes} disabled={isLoading} className="w-full">
+          <Button onClick={handleOptimizeRoutes} disabled={isLoading || ordersToOptimize.length === 0} className="w-full">
             {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Users className="mr-2 h-4 w-4" />}
-            {isLoading ? 'Otimizando Rotas...' : `Otimizar ${ordersToOptimize.length} Entrega(s) (IA)`}
+            {isLoading ? 'Otimizando Rotas...' : `Otimizar ${ordersToOptimize.length} Entrega(s) (IA + Geoapify)`}
           </Button>
 
           {optimizedRoutePlan && optimizedRoutePlan.optimizedRoutePlan.length > 0 && (
             <div className="space-y-4 mt-4 border-t pt-4">
               <h3 className="font-semibold text-md">Plano de Rota Sugerido:</h3>
               {optimizedRoutePlan.summary && <p className="text-sm text-muted-foreground italic mb-2">{optimizedRoutePlan.summary}</p>}
-              {optimizedRoutePlan.optimizedRoutePlan.map((leg, index) => (
-                <div key={index} className="p-3 border rounded-md bg-card">
+              {optimizedRoutePlan.optimizedRoutePlan.map((leg: OptimizedRouteLeg, index: number) => (
+                <div key={index} className="p-3 border rounded-md bg-card space-y-1">
                   <p className="font-medium text-sm">Rota {index + 1}: <span className="text-primary">{leg.description}</span></p>
-                  <p className="text-xs text-muted-foreground">Pedidos: {leg.orderIds.join(', ')}</p>
-                  <Link href={leg.googleMapsUrl} target="_blank" rel="noopener noreferrer" className="flex items-center text-xs text-blue-600 hover:text-blue-800 underline break-all mt-1">
-                    Ver Rota {index + 1} no Mapa <ExternalLink className="ml-1 h-3 w-3 shrink-0" />
+                  <p className="text-xs text-muted-foreground">Pedidos: {leg.orderIds.map(id => id.substring(0,8)+"...").join(', ')}</p>
+                  <div className="flex flex-wrap justify-between text-xs">
+                    {leg.distanceMeters !== undefined && (
+                         <span className="flex items-center mr-2"><ArrowRightLeft className="mr-1 h-3 w-3 text-muted-foreground"/> Distância: <strong>{formatDistance(leg.distanceMeters)}</strong></span>
+                    )}
+                    {leg.timeSeconds !== undefined && (
+                        <span className="flex items-center"><Clock className="mr-1 h-3 w-3 text-muted-foreground"/> Tempo: <strong>{formatTime(leg.timeSeconds)}</strong></span>
+                    )}
+                  </div>
+                  <Link href={leg.geoapifyRoutePlannerUrl} target="_blank" rel="noopener noreferrer" className="flex items-center text-xs text-blue-600 hover:text-blue-800 underline break-all mt-1">
+                    Ver Rota {index + 1} no Geoapify Planner <ExternalLink className="ml-1 h-3 w-3 shrink-0" />
                   </Link>
                 </div>
               ))}
@@ -165,4 +187,3 @@ const MultiRouteOptimizationModal: FC<MultiRouteOptimizationModalProps> = ({ ord
 };
 
 export default MultiRouteOptimizationModal;
-

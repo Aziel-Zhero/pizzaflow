@@ -10,15 +10,15 @@ import {
   DialogTitle,
   DialogDescription,
   DialogFooter,
+  DialogClose,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
-// import { Textarea } from '@/components/ui/textarea'; // Não mais usado para a rota
-import type { Order } from '@/lib/types';
+import type { Order, OptimizeDeliveryRouteOutput } from '@/lib/types';
 import { PIZZERIA_ADDRESS } from '@/lib/types';
 import { optimizeRouteAction } from '@/app/actions';
-import { Loader2, MapIcon, ExternalLink } from 'lucide-react';
+import { Loader2, MapIcon, ExternalLink, Clock, ArrowRightLeft } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
 
@@ -31,33 +31,46 @@ interface RouteOptimizationModalProps {
 
 const RouteOptimizationModal: FC<RouteOptimizationModalProps> = ({ order, isOpen, onClose, onAssignDelivery }) => {
   const [isLoading, setIsLoading] = useState(false);
-  const [optimizedRouteUrl, setOptimizedRouteUrl] = useState('');
+  const [routeDetails, setRouteDetails] = useState<OptimizeDeliveryRouteOutput | null>(null);
   const [deliveryPerson, setDeliveryPerson] = useState('');
   const { toast } = useToast();
 
   useEffect(() => {
-    if (order) {
-      // Se a rota já for uma URL (de um pedido anterior), usa ela.
-      // Senão, busca uma nova. A IA deve retornar uma URL.
-      setOptimizedRouteUrl(order.optimizedRoute || ''); 
+    if (isOpen && order) {
       setDeliveryPerson(order.deliveryPerson || '');
-    } else {
-      setOptimizedRouteUrl('');
-      setDeliveryPerson('');
+      // Se já existe uma rota otimizada no pedido (pode ser de uma otimização anterior)
+      if (order.optimizedRoute && order.optimizedRoute.includes("geoapify.com")) {
+        setRouteDetails({ 
+            optimizedRoute: order.optimizedRoute,
+            // Os campos distance e time não são armazenados no pedido, então seriam undefined aqui.
+            // O ideal seria a action também retornar esses dados se já existirem no pedido.
+        });
+      } else {
+        setRouteDetails(null); // Limpa rota anterior se não for Geoapify ou se for abrir modal
+      }
+    } else if (!isOpen) {
+        setRouteDetails(null);
+        setDeliveryPerson('');
+        setIsLoading(false);
     }
-  }, [order]);
+  }, [order, isOpen]);
 
   if (!order) return null;
 
   const handleOptimizeRoute = async () => {
     setIsLoading(true);
+    setRouteDetails(null);
     try {
       const result = await optimizeRouteAction(
         PIZZERIA_ADDRESS,
         order.customerAddress,
       );
-      setOptimizedRouteUrl(result.optimizedRoute); // optimizedRoute de aiOptimizeDeliveryRoute é a URL
-      toast({ title: "Rota Otimizada!", description: "A URL da rota de entrega foi gerada." });
+      setRouteDetails(result);
+      if (result.optimizedRoute) {
+        toast({ title: "Rota Otimizada!", description: "A rota de entrega foi gerada com Geoapify." });
+      } else {
+        toast({ title: "Falha na Otimização", description: "Não foi possível gerar a rota.", variant: "destructive" });
+      }
     } catch (error) {
       console.error("Erro ao otimizar rota:", error);
       toast({ title: "Erro", description: "Falha ao otimizar rota. Por favor, tente novamente.", variant: "destructive" });
@@ -67,7 +80,7 @@ const RouteOptimizationModal: FC<RouteOptimizationModalProps> = ({ order, isOpen
   };
 
   const handleConfirmAssignment = () => {
-    if (!optimizedRouteUrl) {
+    if (!routeDetails?.optimizedRoute) {
       toast({ title: "Rota Ausente", description: "Por favor, otimize a rota primeiro.", variant: "destructive" });
       return;
     }
@@ -75,41 +88,63 @@ const RouteOptimizationModal: FC<RouteOptimizationModalProps> = ({ order, isOpen
       toast({ title: "Entregador Ausente", description: "Por favor, atribua um entregador.", variant: "destructive" });
       return;
     }
-    onAssignDelivery(order.id, optimizedRouteUrl, deliveryPerson);
-    onClose();
+    onAssignDelivery(order.id, routeDetails.optimizedRoute, deliveryPerson);
+    // onClose(); // O fechamento é gerenciado pelo componente pai após a ação.
+  };
+  
+  const formatTime = (seconds: number = 0): string => {
+    if (seconds < 60) return `${Math.round(seconds)} seg`;
+    const minutes = Math.floor(seconds / 60);
+    return `${minutes} min`;
+  };
+
+  const formatDistance = (meters: number = 0): string => {
+    if (meters < 1000) return `${Math.round(meters)} m`;
+    const kilometers = (meters / 1000).toFixed(1);
+    return `${kilometers} km`;
   };
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="font-headline flex items-center"><MapIcon className="mr-2 h-5 w-5 text-primary"/>Otimizar Rota de Entrega</DialogTitle>
+          <DialogTitle className="font-headline flex items-center"><MapIcon className="mr-2 h-5 w-5 text-primary"/>Otimizar Rota (Geoapify)</DialogTitle>
           <DialogDescription>
-            Otimize e atribua a entrega para o pedido {order.id}.
+            Pedido: {order.id.substring(0,13)}... para {order.customerName}
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-4">
           <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="pizzeriaAddress" className="text-right">De</Label>
-            <Input id="pizzeriaAddress" value={PIZZERIA_ADDRESS} readOnly className="col-span-3" />
+            <Label htmlFor="pizzeriaAddressModal" className="text-right">De</Label>
+            <Input id="pizzeriaAddressModal" value={PIZZERIA_ADDRESS} readOnly className="col-span-3" />
           </div>
           <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="customerAddress" className="text-right">Para</Label>
-            <Input id="customerAddress" value={order.customerAddress} readOnly className="col-span-3" />
+            <Label htmlFor="customerAddressModal" className="text-right">Para</Label>
+            <Input id="customerAddressModal" value={order.customerAddress} readOnly className="col-span-3" />
           </div>
           
           <Button onClick={handleOptimizeRoute} disabled={isLoading} className="w-full">
             {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <MapIcon className="mr-2 h-4 w-4" />}
-            {isLoading ? 'Otimizando...' : 'Obter Rota Otimizada (IA)'}
+            {isLoading ? 'Otimizando...' : 'Otimizar Rota (Geoapify)'}
           </Button>
 
-          {optimizedRouteUrl && (
-            <div className="space-y-2 mt-4">
-              <Label htmlFor="optimizedRouteResult">Rota Otimizada (Google Maps)</Label>
-              <Link href={optimizedRouteUrl} target="_blank" rel="noopener noreferrer" className="flex items-center text-sm text-blue-600 hover:text-blue-800 underline break-all">
-                {optimizedRouteUrl}
-                <ExternalLink className="ml-2 h-4 w-4 shrink-0" />
-              </Link>
+          {routeDetails?.optimizedRoute && (
+            <div className="space-y-3 mt-4 border-t pt-4">
+              <div>
+                <Label htmlFor="optimizedRouteResult">Rota Otimizada (Geoapify Planner)</Label>
+                <Link href={routeDetails.optimizedRoute} target="_blank" rel="noopener noreferrer" className="flex items-center text-sm text-blue-600 hover:text-blue-800 underline break-all mt-1">
+                  {routeDetails.optimizedRoute}
+                  <ExternalLink className="ml-2 h-4 w-4 shrink-0" />
+                </Link>
+              </div>
+              <div className="flex justify-between text-sm">
+                {routeDetails.distance !== undefined && (
+                     <span className="flex items-center"><ArrowRightLeft className="mr-1 h-4 w-4 text-muted-foreground"/> Distância: <strong>{formatDistance(routeDetails.distance)}</strong></span>
+                )}
+                {routeDetails.time !== undefined && (
+                    <span className="flex items-center"><Clock className="mr-1 h-4 w-4 text-muted-foreground"/> Tempo: <strong>{formatTime(routeDetails.time)}</strong></span>
+                )}
+              </div>
             </div>
           )}
           
@@ -125,8 +160,10 @@ const RouteOptimizationModal: FC<RouteOptimizationModalProps> = ({ order, isOpen
 
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancelar</Button>
-          <Button onClick={handleConfirmAssignment} disabled={!optimizedRouteUrl || !deliveryPerson.trim()}>
+          <DialogClose asChild>
+            <Button variant="outline">Cancelar</Button>
+          </DialogClose>
+          <Button onClick={handleConfirmAssignment} disabled={!routeDetails?.optimizedRoute || !deliveryPerson.trim() || isLoading}>
             Confirmar e Atribuir Entrega
           </Button>
         </DialogFooter>

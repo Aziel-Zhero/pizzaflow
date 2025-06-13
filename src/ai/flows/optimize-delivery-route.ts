@@ -2,18 +2,123 @@
 'use server';
 
 /**
- * @fileOverview Delivery route optimization AI agents.
+ * @fileOverview Delivery route optimization AI agents using Geoapify.
  *
- * - optimizeDeliveryRoute: Handles single delivery route optimization. (OBS: This action is now handled directly in actions.ts for simplicity)
- * - optimizeMultiDeliveryRoute: Handles multi-stop delivery route optimization.
+ * - optimizeMultiDeliveryRoute: Handles multi-stop delivery route optimization for a single delivery person.
  */
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
-import type { OptimizeMultiDeliveryRouteInput, OptimizeMultiDeliveryRouteOutput, MultiStopOrderInfo } from '@/lib/types';
+import type { 
+    OptimizeMultiDeliveryRouteInput, 
+    OptimizeMultiDeliveryRouteOutput, 
+    MultiStopOrderInfo,
+    Coordinates,
+    OptimizedRouteLeg
+} from '@/lib/types';
+import fetch from 'node-fetch'; // Usando node-fetch conforme solicitado
+
+const GEOAPIFY_API_KEY = process.env.GEOAPIFY_API_KEY;
+
+// Helper Schemas
+const CoordinatesSchema = z.object({
+    lat: z.number(),
+    lon: z.number(),
+});
+
+// Tool: Geocode Address using Geoapify
+const geocodeAddressTool = ai.defineTool(
+  {
+    name: 'geocodeAddressTool',
+    description: 'Converts a physical address into geographic coordinates (latitude and longitude) using Geoapify Geocoding API.',
+    inputSchema: z.object({
+      address: z.string().describe('The full street address to geocode. Example: "Rua Exemplo, 123, Bairro, Cidade, Estado, CEP"'),
+    }),
+    outputSchema: CoordinatesSchema.nullable().describe('The latitude and longitude, or null if the address could not be geocoded.'),
+  },
+  async (input) => {
+    if (!GEOAPIFY_API_KEY) {
+      console.error("Geoapify API key is missing.");
+      throw new Error("Geoapify API key is not configured.");
+    }
+    const url = `https://api.geoapify.com/v1/geocode/search?text=${encodeURIComponent(input.address)}&apiKey=${GEOAPIFY_API_KEY}&limit=1`;
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        const errorBody = await response.text();
+        console.error(`Geoapify Geocoding API error: ${response.status} - ${errorBody}`);
+        return null;
+      }
+      const data = await response.json() as any;
+      if (data.features && data.features.length > 0) {
+        const { lat, lon } = data.features[0].properties;
+        return { lat, lon };
+      }
+      console.warn(`Geoapify Geocoding: No coordinates found for address: ${input.address}`);
+      return null;
+    } catch (error) {
+      console.error(`Error calling Geoapify Geocoding API for ${input.address}:`, error);
+      return null;
+    }
+  }
+);
+
+// Tool: Get Route from Geoapify Routing API
+const getGeoapifyRouteTool = ai.defineTool(
+  {
+    name: 'getGeoapifyRouteTool',
+    description: 'Generates an optimized route using Geoapify Routing API for a sequence of waypoints and returns the route planner URL, distance, and time.',
+    inputSchema: z.object({
+      waypoints: z.array(CoordinatesSchema).min(2).describe('An ordered list of waypoints (latitude, longitude objects). The first waypoint is the origin, the last is the destination, and intermediate ones are stops.'),
+      mode: z.string().optional().default('drive').describe('Transportation mode (e.g., drive, truck, walk). Default is "drive".')
+    }),
+    outputSchema: z.object({
+      routePlannerUrl: z.string().url().describe('URL to Geoapify route planner.'),
+      distance: z.number().describe('Total distance in meters.'),
+      time: z.number().describe('Total time in seconds.'),
+    }).nullable().describe("The route details, or null if a route could not be generated."),
+  },
+  async (input) => {
+    if (!GEOAPIFY_API_KEY) {
+      console.error("Geoapify API key is missing.");
+      throw new Error("Geoapify API key is not configured.");
+    }
+    if (input.waypoints.length < 2) {
+        console.error("Geoapify Routing: At least two waypoints (origin and destination) are required.");
+        return null;
+    }
+
+    const waypointsString = input.waypoints.map(wp => `${wp.lat},${wp.lon}`).join('|');
+    const apiUrl = `https://api.geoapify.com/v1/routing?waypoints=${waypointsString}&mode=${input.mode}&apiKey=${GEOAPIFY_API_KEY}`;
+    const routePlannerBaseUrl = `https://www.geoapify.com/route-planner?waypoints=${waypointsString}&mode=${input.mode}`;
+
+    try {
+      const response = await fetch(apiUrl);
+      if (!response.ok) {
+        const errorBody = await response.text();
+        console.error(`Geoapify Routing API error: ${response.status} - ${errorBody}`);
+        return null;
+      }
+      const data = await response.json() as any;
+      if (data.features && data.features.length > 0 && data.features[0].properties) {
+        const properties = data.features[0].properties;
+        return {
+          routePlannerUrl: routePlannerBaseUrl, // Use the constructed planner URL
+          distance: properties.distance, // in meters
+          time: properties.time, // in seconds
+        };
+      }
+      console.warn(`Geoapify Routing: No route found for waypoints: ${waypointsString}`);
+      return null;
+    } catch (error) {
+      console.error(`Error calling Geoapify Routing API for waypoints ${waypointsString}:`, error);
+      return null;
+    }
+  }
+);
 
 
-// Esquemas e fluxo para otimização de múltiplas rotas
+// Schemas for multi-stop route optimization
 const MultiStopOrderInfoSchema = z.object({
     orderId: z.string().describe('O ID do pedido.'),
     customerAddress: z.string().describe('O endereço de entrega do cliente para este pedido.'),
@@ -27,7 +132,9 @@ const OptimizeMultiDeliveryRouteInputSchema = z.object({
 const OptimizedRouteLegSchema = z.object({
     orderIds: z.array(z.string()).describe('IDs dos pedidos agrupados nesta perna da rota.'),
     description: z.string().describe('Descrição textual da rota ou trecho.'),
-    googleMapsUrl: z.string().url().describe('URL do Google Maps para esta perna ou rota completa.'),
+    geoapifyRoutePlannerUrl: z.string().url().describe('URL do Geoapify Route Planner para esta perna ou rota completa.'),
+    distanceMeters: z.number().optional().describe('Distância da rota em metros.'),
+    timeSeconds: z.number().optional().describe('Tempo estimado da rota em segundos.'),
 });
 
 const OptimizeMultiDeliveryRouteOutputSchema = z.object({
@@ -39,63 +146,48 @@ export async function optimizeMultiDeliveryRoute(input: OptimizeMultiDeliveryRou
   return optimizeMultiDeliveryRouteFlow(input);
 }
 
-const getMultiStopRouteTool = ai.defineTool(
-  {
-    name: 'getGoogleMapsMultiStopRouteUrl',
-    description: 'Gera uma URL do Google Maps para uma rota com um ponto de partida, múltiplos destinos (waypoints) e um destino final (que pode ser o ponto de partida ou o último cliente). A ordem dos waypoints deve ser otimizada.',
-    inputSchema: z.object({
-      origin: z.string().describe('O endereço de partida (pizzaria).'),
-      waypoints: z.array(z.string()).describe('Uma lista ordenada de endereços de clientes (paradas intermediárias).'),
-      destination: z.string().describe('O endereço final da rota (pode ser o último cliente ou a pizzaria).'),
-    }),
-    outputSchema: z.string().url().describe('A URL do Google Maps para a rota com múltiplos destinos.'),
-  },
-  async (input) => {
-    const originEncoded = encodeURIComponent(input.origin);
-    const destinationEncoded = encodeURIComponent(input.destination);
-    const waypointsEncoded = input.waypoints.map(wp => encodeURIComponent(wp)).join('|');
-    if (input.waypoints.length > 0) {
-      return `https://www.google.com/maps/dir/?api=1&origin=${originEncoded}&destination=${destinationEncoded}&waypoints=${waypointsEncoded}&travelmode=driving`;
-    }
-    return `https://www.google.com/maps/dir/?api=1&origin=${originEncoded}&destination=${destinationEncoded}&travelmode=driving`;
-  }
-);
-
 const multiRoutePrompt = ai.definePrompt({
-  name: 'optimizeMultiDeliveryRoutePrompt',
+  name: 'optimizeMultiDeliveryRouteGeoapifyPrompt',
   input: {schema: OptimizeMultiDeliveryRouteInputSchema},
   output: {schema: OptimizeMultiDeliveryRouteOutputSchema},
-  tools: [getMultiStopRouteTool],
-  prompt: `Você é um especialista em logística de entrega de pizzas e otimização de rotas.
-Seu objetivo é criar um plano de entrega eficiente para múltiplos pedidos a partir de um endereço de pizzaria.
+  tools: [geocodeAddressTool, getGeoapifyRouteTool],
+  prompt: `Você é um especialista em logística de entrega de pizzas e otimização de rotas usando a API Geoapify.
+Seu objetivo é criar um plano de entrega eficiente para múltiplos pedidos a partir de um endereço de pizzaria para UM ÚNICO ENTREGADOR.
+
+Fluxo de trabalho:
+1.  **Geocodificação Obrigatória**:
+    *   Primeiro, obtenha as coordenadas (latitude, longitude) para o 'pizzeriaAddress' usando a ferramenta 'geocodeAddressTool'. Se falhar, retorne um erro indicando que o endereço da pizzaria não pôde ser geocodificado.
+    *   Para CADA pedido em 'ordersToDeliver', obtenha as coordenadas (latitude, longitude) do 'customerAddress' usando a ferramenta 'geocodeAddressTool'.
+    *   Se algum endereço de cliente não puder ser geocodificado, esse pedido específico deve ser omitido do plano de rota e uma nota deve ser adicionada ao 'summary'. Não falhe todo o processo por causa de um endereço de cliente.
+
+2.  **Planejamento da Rota**:
+    *   Com todas as coordenadas obtidas, determine a ORDEM ÓTIMA de entrega para os clientes cujos endereços foram geocodificados com sucesso.
+    *   Prepare os waypoints para a ferramenta 'getGeoapifyRouteTool'. A lista de waypoints deve ser uma array de objetos {lat, lon}, começando com as coordenadas da pizzaria, seguidas pelas coordenadas dos clientes na ordem otimizada. A última coordenada na lista de waypoints será o destino final dessa rota (o último cliente).
+    *   Chame a ferramenta 'getGeoapifyRouteTool' com a lista de waypoints preparada.
+
+3.  **Formato da Saída**:
+    *   Retorne o plano no formato 'optimizedRoutePlan'. Como estamos planejando para um único entregador, 'optimizedRoutePlan' geralmente terá apenas um elemento.
+    *   Para cada rota no plano (geralmente uma):
+        *   'orderIds': inclua os IDs de TODOS os pedidos que foram incluídos com sucesso nesta rota.
+        *   'description': uma descrição concisa da rota. Ex: "Rota otimizada para X pedidos".
+        *   'geoapifyRoutePlannerUrl': a URL retornada pela ferramenta 'getGeoapifyRouteTool'.
+        *   'distanceMeters': a distância retornada pela ferramenta 'getGeoapifyRouteTool'.
+        *   'timeSeconds': o tempo retornado pela ferramenta 'getGeoapifyRouteTool'.
+    *   'summary': inclua um resumo geral, como "Rota otimizada para X pedidos." e mencione quaisquer pedidos que não puderam ser incluídos devido a falhas na geocodificação.
+
+Exemplo de chamada para 'getGeoapifyRouteTool' se a pizzaria for P e os clientes A, B, C na ordem otimizada:
+waypoints: [ {lat:P_lat, lon:P_lon}, {lat:A_lat, lon:A_lon}, {lat:B_lat, lon:B_lon}, {lat:C_lat, lon:C_lon} ]
 
 Endereço da Pizzaria (Origem): {{{pizzeriaAddress}}}
 
 Pedidos para entrega:
 {{#each ordersToDeliver}}
-- Pedido ID: {{orderId}}, Endereço do Cliente: {{customerAddress}}
+- Pedido ID: {{orderId}}, Endereço do Cliente: {{{customerAddress}}}
 {{/each}}
 
-Considere a proximidade dos endereços para minimizar a distância total percorrida e o tempo.
-1. Determine a ordem ótima de entrega para os clientes.
-2. Agrupe os pedidos em uma única rota, se possível, ou em poucas rotas eficientes.
-3. Para cada rota/agrupamento, use a ferramenta 'getGoogleMapsMultiStopRouteUrl'.
-   - 'origin' será sempre o endereço da pizzaria.
-   - 'waypoints' será a lista ordenada dos endereços dos clientes para essa rota.
-   - 'destination' será o endereço do último cliente nessa rota. Se houver apenas um cliente na "rota" (ou seja, um único pedido sendo considerado como uma rota), não haverá waypoints, e o 'destination' será o endereço desse cliente.
-4. Retorne o plano no formato 'optimizedRoutePlan', onde cada elemento do array representa uma rota. Inclua os IDs dos pedidos servidos por essa rota.
-   - Se todos os pedidos puderem ser entregues em uma única rota otimizada, 'optimizedRoutePlan' terá apenas um elemento.
-   - Forneça uma breve descrição para cada rota e a URL do Google Maps.
-   - Inclua um 'summary' opcional com qualquer observação ou sugestão sobre o plano.
-
-Exemplo de como você deve pensar para chamar a ferramenta:
-Se a ordem otimizada for ClienteA, depois ClienteB, e depois ClienteC:
-- origin: Endereço da Pizzaria
-- waypoints: [Endereço ClienteA, Endereço ClienteB] (ClienteA é o primeiro waypoint)
-- destination: Endereço ClienteC (último cliente da rota)
-
-Se você decidir que todos os clientes podem ser atendidos em uma única rota, o 'destination' da ferramenta será o endereço do último cliente.
-Se você decidir que precisa de duas rotas (ex: Rota 1 para Clientes A e B; Rota 2 para Clientes C e D), você chamará a ferramenta duas vezes e retornará dois elementos em 'optimizedRoutePlan'.
+Lembre-se: Otimize para um único entregador servindo todos os pedidos geocodificados em uma única sequência.
+Se a geocodificação da pizzaria falhar, você DEVE retornar um plano vazio e um sumário indicando o problema.
+Se todos os endereços dos clientes falharem na geocodificação (mas a pizzaria não), retorne um plano vazio e um sumário.
 `,
 });
 
@@ -105,7 +197,13 @@ const optimizeMultiDeliveryRouteFlow = ai.defineFlow(
     inputSchema: OptimizeMultiDeliveryRouteInputSchema,
     outputSchema: OptimizeMultiDeliveryRouteOutputSchema,
   },
-  async input => {
+  async (input) => {
+    if (!GEOAPIFY_API_KEY) {
+        return { 
+            optimizedRoutePlan: [], 
+            summary: "ERRO CRÍTICO: A chave da API Geoapify não está configurada no servidor." 
+        };
+    }
     if (!input.ordersToDeliver || input.ordersToDeliver.length === 0) {
       return { 
         optimizedRoutePlan: [], 
@@ -113,42 +211,54 @@ const optimizeMultiDeliveryRouteFlow = ai.defineFlow(
       };
     }
     
-    // Se houver apenas um pedido, a IA deve ser capaz de lidar com isso chamando
-    // a ferramenta getGoogleMapsMultiStopRouteUrl com waypoints vazio e o cliente como destino.
-    // O prompt foi ajustado para cobrir isso.
-
     try {
         const {output} = await multiRoutePrompt(input);
 
-        // Fallback mais robusto se a IA não retornar um plano válido
-        if (!output || !output.optimizedRoutePlan || output.optimizedRoutePlan.length === 0) {
-            console.warn("AI failed to produce a valid multi-route plan. Generating individual routes as fallback.");
-            const fallbackPlan: OptimizeMultiDeliveryRouteOutput['optimizedRoutePlan'] = input.ordersToDeliver.map(order => ({
-                orderIds: [order.orderId],
-                description: `Rota individual para pedido ${order.orderId}`,
-                googleMapsUrl: `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(input.pizzeriaAddress)}&destination=${encodeURIComponent(order.customerAddress)}&travelmode=driving`
-            }));
+        if (!output || !output.optimizedRoutePlan) {
+            console.warn("AI failed to produce a valid multi-route plan or output was null. Input:", input);
+            // Gerar um fallback se a IA falhar completamente
+            let fallbackSummary = "Otimização da IA falhou em produzir um plano válido. ";
+            const pizzeriaCoords = await geocodeAddressTool({address: input.pizzeriaAddress});
+            if (!pizzeriaCoords) {
+                 fallbackSummary += "Endereço da pizzaria não pôde ser geocodificado.";
+                 return { optimizedRoutePlan: [], summary: fallbackSummary };
+            }
+
+            const fallbackPlan: OptimizedRouteLeg[] = [];
+            for (const order of input.ordersToDeliver) {
+                const customerCoords = await geocodeAddressTool({address: order.customerAddress});
+                if (pizzeriaCoords && customerCoords) {
+                    const routeInfo = await getGeoapifyRouteTool({waypoints: [pizzeriaCoords, customerCoords]});
+                    if (routeInfo) {
+                        fallbackPlan.push({
+                            orderIds: [order.orderId],
+                            description: `Rota individual (fallback) para pedido ${order.orderId}`,
+                            geoapifyRoutePlannerUrl: routeInfo.routePlannerUrl,
+                            distanceMeters: routeInfo.distance,
+                            timeSeconds: routeInfo.time,
+                        });
+                    } else {
+                         fallbackSummary += `Não foi possível gerar rota fallback para ${order.orderId}. `;
+                    }
+                } else {
+                    fallbackSummary += `Endereço do pedido ${order.orderId} não pôde ser geocodificado para rota fallback. `;
+                }
+            }
             return { 
                 optimizedRoutePlan: fallbackPlan, 
-                summary: "Otimização da IA falhou em agrupar rotas. Rotas individuais foram geradas como fallback." 
+                summary: fallbackSummary.trim() 
             };
         }
         return output;
     } catch (error) {
-        console.error("Error during multi-route optimization flow:", error);
-        // Fallback em caso de erro na execução do prompt
-        const fallbackPlan: OptimizeMultiDeliveryRouteOutput['optimizedRoutePlan'] = input.ordersToDeliver.map(order => ({
-            orderIds: [order.orderId],
-            description: `Rota individual para pedido ${order.orderId} (fallback de erro)`,
-            googleMapsUrl: `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(input.pizzeriaAddress)}&destination=${encodeURIComponent(order.customerAddress)}&travelmode=driving`
-        }));
+        console.error("Error during multi-route optimization flow with Geoapify:", error);
         return { 
-            optimizedRoutePlan: fallbackPlan, 
-            summary: "Erro durante a otimização da IA. Rotas individuais foram geradas como fallback."
+            optimizedRoutePlan: [], 
+            summary: `Erro catastrófico durante a otimização: ${(error as Error).message}`
         };
     }
   }
 );
+
 // O fluxo de otimização de rota única (optimizeDeliveryRouteFlow) foi removido daqui
-// pois a lógica foi simplificada e movida diretamente para actions.ts
-// para evitar chamadas de IA desnecessárias para um único destino.
+// pois a lógica agora é feita diretamente em actions.ts com chamadas diretas às APIs Geoapify.

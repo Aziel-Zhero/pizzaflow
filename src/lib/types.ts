@@ -60,13 +60,13 @@ export interface Order {
   updatedAt?: string;
   deliveredAt?: string;
   estimatedDeliveryTime?: string;
-  deliveryPerson?: string; 
-  // deliveryPersonId?: string | null; // Temporarily commented out
-  // deliveryPersonFull?: DeliveryPerson | null; // Temporarily commented out
+  deliveryPerson?: string;
+  // deliveryPersonId?: string | null; // Comentado temporariamente devido a problemas de migração
+  // deliveryPersonFull?: DeliveryPerson | null; // Comentado temporariamente
   paymentType?: PaymentType | null; // Prisma enum will be mapped
   paymentStatus: PaymentStatus; // Prisma enum will be mapped
   notes?: string;
-  optimizedRoute?: string;
+  optimizedRoute?: string; // Pode ser URL do Geoapify ou Google Maps
   nfeLink?: string | null; // Novo campo para link da NFe
 
   appliedCouponCode?: string | null;
@@ -105,7 +105,8 @@ export interface DashboardAnalyticsData {
   ordersByStatus: OrdersByStatusData[];
   dailyRevenue: DailyRevenue[];
   timeEstimates: TimeEstimateData;
-  couponUsage: CouponUsageData; // Tornar não opcional, sempre terá valores (mesmo que 0)
+  couponUsage: CouponUsageData;
+  // deliveryPersonStats: Array<{ name: string; deliveryCount: number; isActive: boolean; }>; // Para futura implementação
 }
 
 export interface MenuItem {
@@ -119,10 +120,6 @@ export interface MenuItem {
   dataAiHint?: string;
 }
 
-// Para NewOrderClientData, items deve ser apenas o essencial para criar OrderItem
-// O backend vai buscar o nome e preço atuais do MenuItem para popular o OrderItem no banco,
-// ou podemos passar o preço atual aqui para congelá-lo no momento do pedido.
-// Vou manter a estrutura atual onde o client envia price, name.
 export interface NewOrderClientItemData {
     menuItemId: string;
     quantity: number;
@@ -143,13 +140,12 @@ export interface NewOrderClientData {
 }
 
 export interface CepAddress {
-  cep?: string; // Adicionado para consistência com o retorno da API Brasil
+  cep?: string;
   street: string;
   neighborhood: string;
   city: string;
   state: string;
   fullAddress?: string;
-  // Campos da BrasilAPI V2
   location?: {
     type: string;
     coordinates?: {
@@ -160,31 +156,49 @@ export interface CepAddress {
   service?: string;
 }
 
+export interface Coordinates {
+  lat: number;
+  lon: number;
+}
+
+export interface GeoapifyGeocodeResult extends Coordinates {
+  address: string; // Endereço original para referência
+}
+
+
 export interface MultiStopOrderInfo {
-  orderId: string; // Continuará usando o UUID interno
+  orderId: string;
   customerAddress: string;
+  // customerCoordinates?: Coordinates; // Será preenchido pelo fluxo
 }
 
 export interface OptimizeMultiDeliveryRouteInput {
   pizzeriaAddress: string;
+  // pizzeriaCoordinates?: Coordinates; // Será preenchido pelo fluxo
   ordersToDeliver: MultiStopOrderInfo[];
 }
 
 export interface OptimizedRouteLeg {
-  orderIds: string[]; // Continuará usando os UUIDs internos
+  orderIds: string[];
   description: string;
-  googleMapsUrl: string;
+  geoapifyRoutePlannerUrl: string; // Substituído googleMapsUrl
+  distanceMeters?: number;
+  timeSeconds?: number;
 }
 export interface OptimizeMultiDeliveryRouteOutput {
   optimizedRoutePlan: OptimizedRouteLeg[];
   summary?: string;
 }
 
-export interface OptimizeDeliveryRouteInput {
-  pizzeriaAddress: string;
-  customerAddress: string;
+// Para otimização de rota única com Geoapify (sem IA, direto na action)
+export interface GeoapifyRouteInfo {
+  routePlannerUrl: string;
+  distance?: number; // em metros
+  time?: number; // em segundos
 }
 
 export interface OptimizeDeliveryRouteOutput {
-  optimizedRoute: string; // URL
+  optimizedRoute: string; // Mantido como string para a URL do planejador de rotas
+  distance?: number;
+  time?: number;
 }

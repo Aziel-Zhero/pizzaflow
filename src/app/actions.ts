@@ -18,23 +18,27 @@ import type {
     NewOrderClientItemData,
     OrderStatus,
     PaymentType,
-    PaymentStatus,
+    // PaymentStatus, // Não é usado diretamente aqui
     DashboardAnalyticsData,
-    DailyRevenue,
-    OrdersByStatusData,
+    // DailyRevenue, // Não é usado diretamente aqui
+    // OrdersByStatusData, // Não é usado diretamente aqui
     CepAddress,
     OptimizeMultiDeliveryRouteInput,
     OptimizeMultiDeliveryRouteOutput,
     OptimizeDeliveryRouteOutput,
-    CouponUsageData,
+    // CouponUsageData, // Não é usado diretamente aqui
     Coupon,
-    // DiscountType, // Não é usado diretamente aqui, mas é parte de Coupon
-    DeliveryPerson
+    DeliveryPerson,
+    GeoapifyRouteInfo,
+    Coordinates
 } from '@/lib/types';
 import { optimizeMultiDeliveryRoute as aiOptimizeMultiDeliveryRoute } from '@/ai/flows/optimize-delivery-route';
-import { format, subDays, parseISO, differenceInMinutes, startOfDay, endOfDay, isFuture, getDay } from 'date-fns';
+import { format, subDays, parseISO, differenceInMinutes, startOfDay, endOfDay, isFuture } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import crypto from 'crypto';
+import fetch from 'node-fetch';
+
+const GEOAPIFY_API_KEY = process.env.GEOAPIFY_API_KEY;
 
 // --- Funções do Cardápio ---
 
@@ -172,20 +176,10 @@ const mapDbOrderToOrderType = (dbOrder: any): Order => {
     };
   }
 
-  // let deliveryPersonFullData: DeliveryPerson | null = null; // Temporarily set to null
-  // if (dbOrder.deliveryPersonAssigned) { // This relation is temporarily removed
-  //   deliveryPersonFullData = {
-  //     ...dbOrder.deliveryPersonAssigned,
-  //     createdAt: dbOrder.deliveryPersonAssigned.createdAt instanceof Date ? dbOrder.deliveryPersonAssigned.createdAt.toISOString() : String(dbOrder.deliveryPersonAssigned.createdAt),
-  //     updatedAt: dbOrder.deliveryPersonAssigned.updatedAt instanceof Date ? dbOrder.deliveryPersonAssigned.updatedAt.toISOString() : String(dbOrder.deliveryPersonAssigned.updatedAt),
-  //   };
-  // }
-
   return {
     ...dbOrder,
     items,
     coupon: couponData,
-    // deliveryPersonFull: deliveryPersonFullData, // Temporarily removed
     totalAmount: parseFloat(dbOrder.totalAmount as string),
     appliedCouponDiscount: dbOrder.appliedCouponDiscount ? parseFloat(dbOrder.appliedCouponDiscount as string) : null,
     createdAt: dbOrder.createdAt instanceof Date ? dbOrder.createdAt.toISOString() : String(dbOrder.createdAt),
@@ -202,7 +196,7 @@ export async function getOrders(): Promise<Order[]> {
       with: {
         items: true,
         coupon: true,
-        // deliveryPersonAssigned: true, // Temporarily commented out
+        // deliveryPersonAssigned: true, // Temporariamente comentado
       },
       orderBy: [desc(ordersTable.createdAt)],
     });
@@ -222,7 +216,7 @@ export async function getOrderById(orderId: string): Promise<Order | null> {
       with: {
         items: true,
         coupon: true,
-        // deliveryPersonAssigned: true, // Temporarily commented out
+        // deliveryPersonAssigned: true, // Temporariamente comentado
       },
     });
 
@@ -276,7 +270,7 @@ export async function assignDelivery(orderId: string, route: string, deliveryPer
       status: 'SaiuParaEntrega',
       optimizedRoute: route,
       deliveryPerson: deliveryPersonName,
-      // deliveryPersonId: deliveryPersonId || null, // Temporarily commented out
+      // deliveryPersonId: deliveryPersonId || null, // Temporariamente comentado
       updatedAt: new Date(),
     };
 
@@ -312,9 +306,9 @@ export async function assignMultiDelivery(plan: OptimizeMultiDeliveryRouteOutput
 
       const updatePayload: Partial<typeof ordersTable.$inferInsert> = {
         status: 'SaiuParaEntrega',
-        optimizedRoute: leg.googleMapsUrl,
+        optimizedRoute: leg.geoapifyRoutePlannerUrl, // Use new field name
         deliveryPerson: deliveryPersonName,
-        // deliveryPersonId: deliveryPersonId || null, // Temporarily commented out
+        // deliveryPersonId: deliveryPersonId || null, // Temporariamente comentado
         updatedAt: new Date(),
       };
 
@@ -463,7 +457,7 @@ export async function addNewOrder(newOrderData: NewOrderClientData): Promise<Ord
     console.log("actions.ts: addNewOrder - Final totalAmount:", totalAmount);
     const newOrderId = crypto.randomUUID();
 
-    const orderToInsert: Partial<typeof ordersTable.$inferInsert> = { // Use Partial as deliveryPersonId is commented
+    const orderToInsert = { // Não é Partial pois todos os campos obrigatórios estão aqui
       id: newOrderId,
       customerName: newOrderData.customerName,
       customerAddress: newOrderData.customerAddress,
@@ -472,13 +466,14 @@ export async function addNewOrder(newOrderData: NewOrderClientData): Promise<Ord
       totalAmount: String(totalAmount.toFixed(2)),
       status: 'Pendente' as OrderStatus,
       paymentType: newOrderData.paymentType || null,
-      paymentStatus: 'Pendente' as PaymentStatus,
+      paymentStatus: 'Pendente' as PaymentStatus, // PaymentStatus é notNull
       notes: newOrderData.notes || null,
       appliedCouponCode: appliedCoupon ? appliedCoupon.code : null,
       appliedCouponDiscount: discountAmount > 0 ? String(discountAmount.toFixed(2)) : null,
       couponId: finalCouponId,
       createdAt: new Date(),
       updatedAt: new Date(),
+      // deliveryPersonId: null, // Temporariamente comentado
     };
     console.log("actions.ts: addNewOrder - Order data to insert:", JSON.stringify(orderToInsert, null, 2));
 
@@ -522,7 +517,7 @@ export async function addNewOrder(newOrderData: NewOrderClientData): Promise<Ord
       with: {
         items: true,
         coupon: true,
-        // deliveryPersonAssigned: true, // Temporarily commented out
+        // deliveryPersonAssigned: true, // Temporariamente comentado
       }
     });
 
@@ -590,40 +585,119 @@ export async function simulateNewOrder(): Promise<Order> {
     return addNewOrder(simulatedOrderData);
 }
 
-// --- Funções de IA ---
-export async function optimizeRouteAction(pizzeriaAddress: string, customerAddress: string): Promise<OptimizeDeliveryRouteOutput> {
-    console.log("actions.ts: Generating single delivery route URL directly for:", customerAddress);
+
+// --- Funções de Geocodificação e Roteirização com Geoapify (direto, sem IA para casos simples) ---
+
+async function geocodeWithGeoapify(address: string): Promise<Coordinates | null> {
+    if (!GEOAPIFY_API_KEY) {
+      console.error("Geoapify API key is missing for direct geocoding.");
+      return null;
+    }
+    const url = `https://api.geoapify.com/v1/geocode/search?text=${encodeURIComponent(address)}&apiKey=${GEOAPIFY_API_KEY}&limit=1`;
     try {
-        const origin = encodeURIComponent(pizzeriaAddress);
-        const destination = encodeURIComponent(customerAddress);
-        const mapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`;
-        console.log("actions.ts: Generated maps URL:", mapsUrl);
-        return { optimizedRoute: mapsUrl };
+      const response = await fetch(url);
+      if (!response.ok) {
+        console.error(`Geoapify Geocoding API error (direct): ${response.status} - ${await response.text()}`);
+        return null;
+      }
+      const data = await response.json() as any;
+      if (data.features && data.features.length > 0) {
+        const { lat, lon } = data.features[0].properties;
+        return { lat, lon };
+      }
+      return null;
     } catch (error) {
-        console.error("actions.ts: Error generating single route URL:", error);
-        const fallbackUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(customerAddress)}`;
-        console.log("actions.ts: Generated fallback maps URL:", fallbackUrl);
-        return { optimizedRoute: fallbackUrl };
+      console.error(`Error calling Geoapify Geocoding API (direct) for ${address}:`, error);
+      return null;
     }
 }
 
+async function getRouteWithGeoapify(origin: Coordinates, destination: Coordinates): Promise<GeoapifyRouteInfo | null> {
+    if (!GEOAPIFY_API_KEY) {
+      console.error("Geoapify API key is missing for direct routing.");
+      return null;
+    }
+    const waypointsString = `${origin.lat},${origin.lon}|${destination.lat},${destination.lon}`;
+    const apiUrl = `https://api.geoapify.com/v1/routing?waypoints=${waypointsString}&mode=drive&apiKey=${GEOAPIFY_API_KEY}`;
+    const routePlannerBaseUrl = `https://www.geoapify.com/route-planner?waypoints=${waypointsString}&mode=drive`;
+
+    try {
+      const response = await fetch(apiUrl);
+      if (!response.ok) {
+        console.error(`Geoapify Routing API error (direct): ${response.status} - ${await response.text()}`);
+        return null;
+      }
+      const data = await response.json() as any;
+      if (data.features && data.features.length > 0 && data.features[0].properties) {
+        const properties = data.features[0].properties;
+        return {
+          routePlannerUrl: routePlannerBaseUrl,
+          distance: properties.distance,
+          time: properties.time,
+        };
+      }
+      return null;
+    } catch (error) {
+      console.error(`Error calling Geoapify Routing API (direct):`, error);
+      return null;
+    }
+}
+
+
+export async function optimizeRouteAction(pizzeriaAddress: string, customerAddress: string): Promise<OptimizeDeliveryRouteOutput> {
+    console.log("actions.ts: Optimizing single route with Geoapify for:", customerAddress);
+    if (!GEOAPIFY_API_KEY) {
+        console.error("Geoapify API Key not configured.");
+        // Fallback to Google Maps URL if Geoapify is not configured
+        const mapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(pizzeriaAddress)}&destination=${encodeURIComponent(customerAddress)}&travelmode=driving`;
+        return { optimizedRoute: mapsUrl, distance: undefined, time: undefined };
+    }
+
+    const pizzeriaCoords = await geocodeWithGeoapify(pizzeriaAddress);
+    const customerCoords = await geocodeWithGeoapify(customerAddress);
+
+    if (!pizzeriaCoords) {
+        console.error("Could not geocode pizzeria address:", pizzeriaAddress);
+        return { optimizedRoute: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(customerAddress)}` }; // Fallback
+    }
+    if (!customerCoords) {
+        console.error("Could not geocode customer address:", customerAddress);
+        return { optimizedRoute: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(customerAddress)}` }; // Fallback
+    }
+
+    const routeInfo = await getRouteWithGeoapify(pizzeriaCoords, customerCoords);
+
+    if (routeInfo) {
+        return {
+            optimizedRoute: routeInfo.routePlannerUrl,
+            distance: routeInfo.distance,
+            time: routeInfo.time
+        };
+    } else {
+        // Fallback if Geoapify routing fails
+        return { optimizedRoute: `https://www.google.com/maps/dir/?api=1&origin=${pizzeriaCoords.lat},${pizzeriaCoords.lon}&destination=${customerCoords.lat},${customerCoords.lon}&travelmode=driving` };
+    }
+}
+
+
+// --- Funções de IA ---
 export async function optimizeMultiRouteAction(input: OptimizeMultiDeliveryRouteInput): Promise<OptimizeMultiDeliveryRouteOutput> {
-    console.log("actions.ts: Calling AI for multi-route optimization. Input:", JSON.stringify(input, null, 2));
+    console.log("actions.ts: Calling AI for multi-route optimization with Geoapify. Input:", JSON.stringify(input, null, 2));
+    if (!GEOAPIFY_API_KEY) {
+        return { 
+            optimizedRoutePlan: [], 
+            summary: "ERRO: A chave da API Geoapify não está configurada no servidor. Não é possível otimizar rotas." 
+        };
+    }
     try {
       const result = await aiOptimizeMultiDeliveryRoute(input);
-      console.log("actions.ts: AI multi-route optimization result:", JSON.stringify(result, null, 2));
+      console.log("actions.ts: AI multi-route optimization (Geoapify) result:", JSON.stringify(result, null, 2));
       return result;
     } catch (aiError) {
-        console.error("actions.ts: CRITICAL ERROR during AI multi-route optimization call:", aiError);
-        // Fallback: gerar rotas individuais se a IA falhar completamente
-        const fallbackPlan: OptimizeMultiDeliveryRouteOutput['optimizedRoutePlan'] = input.ordersToDeliver.map(order => ({
-            orderIds: [order.orderId],
-            description: `Rota individual para pedido ${order.orderId} (fallback de erro AI)`,
-            googleMapsUrl: `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(input.pizzeriaAddress)}&destination=${encodeURIComponent(order.customerAddress)}&travelmode=driving`
-        }));
+        console.error("actions.ts: CRITICAL ERROR during AI multi-route optimization call (Geoapify):", aiError);
         return {
-            optimizedRoutePlan: fallbackPlan,
-            summary: "Otimização da IA falhou criticamente. Rotas individuais foram geradas."
+            optimizedRoutePlan: [],
+            summary: `Otimização da IA falhou criticamente (Geoapify): ${(aiError as Error).message}`
         };
     }
 }
@@ -651,8 +725,6 @@ export async function getDashboardAnalytics(
     .from(ordersTable)
     .where(whereConditions);
   const totalOrders = totalOrdersResult[0]?.value || 0;
-  console.log("actions.ts: Dashboard - totalOrders:", totalOrders);
-
 
   let revenueWhereConditions: SQL | undefined = and(notCancelledFilter, paidFilter);
   if (dateFilter) {
@@ -662,15 +734,12 @@ export async function getDashboardAnalytics(
     .from(ordersTable)
     .where(revenueWhereConditions);
   const totalRevenue = totalRevenueResult[0]?.value || 0;
-  console.log("actions.ts: Dashboard - totalRevenue:", totalRevenue);
 
   const paidOrdersCountResult = await db.select({ value: dslCount(ordersTable.id) })
     .from(ordersTable)
     .where(revenueWhereConditions);
   const paidOrdersCount = paidOrdersCountResult[0]?.value || 0;
   const averageOrderValue = paidOrdersCount > 0 ? totalRevenue / paidOrdersCount : 0;
-  console.log("actions.ts: Dashboard - averageOrderValue:", averageOrderValue, "(Paid orders count:", paidOrdersCount, ")");
-
 
   const ordersByStatusResult = await db.select({ status: ordersTable.status, count: dslCount(ordersTable.id) })
     .from(ordersTable)
@@ -682,18 +751,16 @@ export async function getDashboardAnalytics(
     AguardandoRetirada: "hsl(var(--chart-3))", SaiuParaEntrega: "hsl(var(--chart-4))",
     Entregue: "hsl(var(--chart-5))", Cancelado: "hsl(var(--destructive))",
   };
-  const ordersByStatus: OrdersByStatusData[] = ordersByStatusResult.map(s => ({
+  const ordersByStatus: DashboardAnalyticsData['ordersByStatus'] = ordersByStatusResult.map(s => ({
     name: s.status as OrderStatus,
     value: s.count,
     fill: statusColorsForCharts[s.status as OrderStatus] || 'hsl(var(--muted))',
   }));
-  console.log("actions.ts: Dashboard - ordersByStatus:", JSON.stringify(ordersByStatus, null, 2));
 
-
-  const dailyRevenue: DailyRevenue[] = [];
+  const dailyRevenue: DashboardAnalyticsData['dailyRevenue'] = [];
   const today = new Date();
   for (let i = 6; i >= 0; i--) {
-    const day = subDays(today, i); // Usar 'today' como referência para consistência
+    const day = subDays(today, i);
     const start = startOfDay(day);
     const end = endOfDay(day);
 
@@ -711,11 +778,10 @@ export async function getDashboardAnalytics(
       Receita: dailyRevenueResult[0]?.value || 0,
     });
   }
-  console.log("actions.ts: Dashboard - dailyRevenue (last 7 days):", JSON.stringify(dailyRevenue, null, 2));
 
   let averageTimeToDeliveryMinutes: number | undefined = undefined;
   let deliveredWhereConditions: SQL | undefined = and(eq(ordersTable.status, 'Entregue'), isNotNull(ordersTable.deliveredAt), isNotNull(ordersTable.createdAt));
-  if (dateFilter) { // Aplica filtro de período também aqui se fornecido
+  if (dateFilter) {
     deliveredWhereConditions = and(
         eq(ordersTable.status, 'Entregue'),
         dateFilter,
@@ -737,10 +803,9 @@ export async function getDashboardAnalytics(
     }, 0);
     averageTimeToDeliveryMinutes = Math.round(totalDeliveryMinutes / deliveredOrdersForTimeAvg.length);
   }
-  console.log("actions.ts: Dashboard - averageTimeToDeliveryMinutes:", averageTimeToDeliveryMinutes, "(Delivered orders for avg:", deliveredOrdersForTimeAvg.length, ")");
 
   let couponUsageWhereConditions: SQL | undefined = and(isNotNull(ordersTable.couponId), notCancelledFilter);
-  if(dateFilter) { // Aplica filtro de período também aqui se fornecido
+  if(dateFilter) {
     couponUsageWhereConditions = and(isNotNull(ordersTable.couponId), notCancelledFilter, dateFilter);
   }
 
@@ -751,13 +816,11 @@ export async function getDashboardAnalytics(
     .from(ordersTable)
     .where(couponUsageWhereConditions);
 
-  const couponUsage: CouponUsageData = {
+  const couponUsage: DashboardAnalyticsData['couponUsage'] = {
     totalCouponsUsed: couponUsageResult[0]?.totalCouponsUsed || 0,
     totalDiscountAmount: couponUsageResult[0]?.totalDiscountAmount || 0,
   };
-  console.log("actions.ts: Dashboard - couponUsage:", JSON.stringify(couponUsage, null, 2));
 
-  console.log("actions.ts: Dashboard - Analytics data fully assembled.");
   return {
     totalOrders,
     totalRevenue,
@@ -775,7 +838,7 @@ export async function exportOrdersToCSV(): Promise<string> {
     console.log("actions.ts: Exporting orders to CSV with Drizzle...");
     try {
         const ordersData = await db.query.orders.findMany({
-            with: { items: true, coupon: true /*, deliveryPersonAssigned: true Temporarily removed */ },
+            with: { items: true, coupon: true /*, deliveryPersonAssigned: true Temporariamente comentado */ },
             orderBy: [desc(ordersTable.createdAt)],
         });
 
@@ -804,7 +867,7 @@ export async function exportOrdersToCSV(): Promise<string> {
             csvString += `"${order.totalAmount.toFixed(2)}";`;
             csvString += `"${order.appliedCouponCode || ''}";`;
             csvString += `"${(order.appliedCouponDiscount || 0).toFixed(2)}";`;
-            csvString += `"${order.deliveryPerson || ''}";`; // Use simple deliveryPerson string
+            csvString += `"${order.deliveryPerson || ''}";`;
             csvString += `"${order.nfeLink || ''}";`;
             csvString += `"${(order.notes || '').replace(/"/g, '""')}";`;
             csvString += `"${itemsString.replace(/"/g, '""')}"\n`;
@@ -839,9 +902,9 @@ export async function fetchAddressFromCep(cep: string): Promise<CepAddress | nul
     console.log(`actions.ts: CEP ${cleanedCep} encontrado. Dados:`, JSON.stringify(data, null, 2));
 
     const fullAddress = [data.street, data.neighborhood, data.city, data.state]
-        .filter(Boolean) // Remove partes vazias
+        .filter(Boolean)
         .join(', ')
-        .replace(/, $/, ''); // Remove vírgula no final se houver
+        .replace(/, $/, '');
 
     return { ...data, fullAddress: fullAddress || undefined };
 
@@ -962,7 +1025,7 @@ export async function addDeliveryPerson(data: Omit<DeliveryPerson, 'id' | 'creat
       name: data.name,
       vehicleDetails: data.vehicleDetails || null,
       licensePlate: data.licensePlate || null,
-      isActive: true,
+      isActive: true, // Default to active
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -1005,8 +1068,7 @@ export async function updateDeliveryPerson(id: string, data: Partial<Omit<Delive
   console.log("actions.ts: Updating delivery person. ID:", id, "Data:", JSON.stringify(data, null, 2));
   try {
     const updateData = { ...data, updatedAt: new Date() };
-    // Remover 'id' do objeto de atualização, se presente, pois não deve ser atualizado.
-    const { id: dataId, ...payload } = updateData as any;
+    const { id: dataId, ...payload } = updateData as any; // Remove id from payload
     console.log("actions.ts: Delivery person update payload:", JSON.stringify(payload, null, 2));
 
     const [updatedPerson] = await db.update(deliveryPersonsTable)
@@ -1033,7 +1095,7 @@ export async function updateDeliveryPerson(id: string, data: Partial<Omit<Delive
 export async function deleteDeliveryPerson(id: string): Promise<boolean> {
   console.log("actions.ts: Deleting delivery person. ID:", id);
   try {
-    // const assignedOrders = await db.select({ orderId: ordersTable.id }) // Temporarily disabled check
+    // const assignedOrders = await db.select({ orderId: ordersTable.id }) // Temporariamente desabilitado
     //     .from(ordersTable)
     //     .where(and(
     //         eq(ordersTable.deliveryPersonId, id),

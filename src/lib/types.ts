@@ -33,8 +33,8 @@ export interface Coupon {
   minOrderAmount?: number;
   // Relação não populada por padrão na maioria das buscas, mas útil para tipos
   orders?: Order[];
-  createdAt: string; 
-  updatedAt: string; 
+  createdAt: string;
+  updatedAt: string;
 }
 
 // Tipos para Entregadores
@@ -62,8 +62,8 @@ export interface Order {
   deliveredAt?: string;
   estimatedDeliveryTime?: string;
   deliveryPerson?: string; // Nome do entregador
-  deliveryPersonId?: string | null; // ID do entregador (FK)
-  deliveryPersonFull?: DeliveryPerson | null; // Objeto completo do entregador, se populado
+  // deliveryPersonId?: string | null; // ID do entregador (FK) // Temporarily commented out
+  // deliveryPersonFull?: DeliveryPerson | null; // Objeto completo do entregador, se populado // Temporarily commented out
   paymentType?: PaymentType | null; // Prisma enum will be mapped
   paymentStatus: PaymentStatus; // Prisma enum will be mapped
   notes?: string;
@@ -162,19 +162,19 @@ export interface Coordinates {
 export interface CepAddress {
   cep?: string;
   street?: string;
-  address_line1?: string; 
-  address_line2?: string; 
-  postcode?: string; 
+  address_line1?: string;
+  address_line2?: string;
+  postcode?: string;
   district?: string; // Geoapify uses 'district' for Bairro
   suburb?: string; // Geoapify sometimes uses 'suburb'
   city?: string;
   state?: string;
   state_code?: string; // Geoapify uses 'state_code' for UF
-  country?: string; 
+  country?: string;
   country_code?: string;
-  lon?: number; 
-  lat?: number; 
-  fullAddress?: string; 
+  lon?: number;
+  lat?: number;
+  fullAddress?: string;
 }
 
 
@@ -196,7 +196,7 @@ export interface OptimizeMultiDeliveryRouteInput {
 export interface OptimizedRouteLeg {
   orderIds: string[];
   description: string;
-  geoapifyRoutePlannerUrl: string; 
+  geoapifyRoutePlannerUrl: string;
   distanceMeters?: number;
   timeSeconds?: number;
 }
@@ -213,8 +213,7 @@ export interface GeoapifyRouteInfo {
 }
 
 export interface OptimizeDeliveryRouteOutput {
-  optimizedRoute: string; 
+  optimizedRoute: string;
   distance?: number;
   time?: number;
 }
-

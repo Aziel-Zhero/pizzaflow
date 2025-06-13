@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useEffect, useState, useCallback } from 'react'; // Added useCallback
+import { useEffect, useState, useCallback } from 'react'; 
 import AppHeader from '@/components/pizzaflow/AppHeader';
 import OrderColumn from '@/components/pizzaflow/OrderColumn';
 import OrderDetailsModal from '@/components/pizzaflow/modals/OrderDetailsModal';
@@ -36,26 +36,29 @@ export default function PizzaFlowDashboard() {
       console.error("Falha ao buscar pedidos:", error);
       toast({ title: "Erro de Rede", description: "Não foi possível buscar os pedidos. Verifique sua conexão ou a configuração do banco.", variant: "destructive" });
       setErrorLoading("Falha ao carregar pedidos. Verifique o console para mais detalhes ou a conexão com o banco de dados.");
-      setOrders([]); // Limpa os pedidos em caso de erro para não mostrar dados antigos
+      setOrders([]); 
     } finally {
       if(showLoader) setIsLoading(false);
     }
-  }, [toast]); // toast é uma dependência estável
+  }, [toast]); 
 
   useEffect(() => {
-    fetchOrders(true); // Fetch inicial com loader
-    const intervalId = setInterval(() => fetchOrders(false), 30000); // Refresh a cada 30 segundos sem loader piscando
+    fetchOrders(true); 
+    const intervalId = setInterval(() => fetchOrders(false), 30000); 
     return () => clearInterval(intervalId);
   }, [fetchOrders]);
   
   const handleSimulateNewOrder = async () => {
+    setIsLoading(true); // Show loader for simulation as it involves DB write + read
     try {
       const newOrder = await simulateNewOrder();
       toast({title: "Novo Pedido Recebido!", description: `Pedido simulado ${newOrder.id} adicionado.`});
-      await fetchOrders(false); // Atualiza a lista sem loader global
+      await fetchOrders(false); 
     } catch (error) {
       console.error("Falha ao simular novo pedido:", error)
       toast({ title: "Erro na Simulação", description: "Falha ao simular novo pedido. Verifique o console.", variant: "destructive" });
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -70,7 +73,7 @@ export default function PizzaFlowDashboard() {
                 if (index !== -1) {
                     newOrdersList[index] = uo;
                 } else {
-                    newOrdersList.push(uo); // Should not happen for multi-assign if orders exist
+                    newOrdersList.push(uo); 
                 }
             });
         } else {
@@ -87,14 +90,14 @@ export default function PizzaFlowDashboard() {
 
 
   const handleTakeOrder = async (orderId: string) => {
-    const updatedOrder = await updateOrderStatus(orderId, 'EmPreparo'); // Prisma enum
+    const updatedOrder = await updateOrderStatus(orderId, 'EmPreparo'); 
     updateOrderInState(updatedOrder);
     if(updatedOrder) toast({ title: "Pedido Aceito", description: `Pedido ${orderId} está agora em preparo.` });
     else toast({ title: "Erro", description: `Falha ao aceitar pedido ${orderId}.`, variant: "destructive"});
   };
 
   const handleReadyForPickup = async (orderId: string) => {
-    const updatedOrder = await updateOrderStatus(orderId, 'AguardandoRetirada'); // Prisma enum
+    const updatedOrder = await updateOrderStatus(orderId, 'AguardandoRetirada'); 
     updateOrderInState(updatedOrder);
      if(updatedOrder) toast({ title: "Pedido Pronto", description: `Pedido ${orderId} está pronto para retirada/entrega.` });
      else toast({ title: "Erro", description: `Falha ao marcar pedido ${orderId} como pronto.`, variant: "destructive"});
@@ -106,15 +109,15 @@ export default function PizzaFlowDashboard() {
 
   const handleOptimizeMultiRoute = () => {
     const ordersToOptimize = orders.filter(o => o.status === 'AguardandoRetirada');
-    if (ordersToOptimize.length === 0) {
-        toast({ title: "Nenhum Pedido", description: "Não há pedidos aguardando retirada para otimizar.", variant: "default" });
+    if (ordersToOptimize.length < 2) { // Changed from 0 to < 2
+        toast({ title: "Poucos Pedidos", description: "A otimização de múltiplas rotas requer pelo menos 2 pedidos aguardando retirada.", variant: "default" });
         return;
     }
     setIsMultiRouteModalOpen(true);
   };
   
-  const handleAssignDelivery = async (orderId: string, route: string, deliveryPerson: string) => {
-    const updatedOrder = await assignDelivery(orderId, route, deliveryPerson);
+  const handleAssignDelivery = async (orderId: string, route: string, deliveryPerson: string, deliveryPersonId?: string) => {
+    const updatedOrder = await assignDelivery(orderId, route, deliveryPerson, deliveryPersonId);
     updateOrderInState(updatedOrder);
     if(updatedOrder) {
         toast({ title: "Entrega Designada", description: `Pedido ${orderId} saiu para entrega com ${deliveryPerson}.` });
@@ -124,12 +127,13 @@ export default function PizzaFlowDashboard() {
     }
   };
   
-  const handleAssignMultiDelivery = async (routePlan: OptimizeMultiDeliveryRouteOutput, deliveryPerson: string) => {
-    const updatedOrders = await assignMultiDelivery(routePlan, deliveryPerson);
+  const handleAssignMultiDelivery = async (routePlan: OptimizeMultiDeliveryRouteOutput, deliveryPerson: string, deliveryPersonId?: string) => {
+    const updatedOrders = await assignMultiDelivery(routePlan, deliveryPerson, deliveryPersonId);
     updateOrderInState(updatedOrders);
     if(updatedOrders && updatedOrders.length > 0) {
         toast({ title: "Entregas em Lote Designadas", description: `${updatedOrders.length} pedidos saíram para entrega com ${deliveryPerson}.` });
         setIsMultiRouteModalOpen(false);
+        fetchOrders(false); // Re-fetch to update all views
     } else {
          toast({ title: "Erro", description: "Falha ao designar entregas em lote.", variant: "destructive"});
     }
@@ -137,10 +141,9 @@ export default function PizzaFlowDashboard() {
 
 
   const handleMarkDelivered = async (orderToUpdate: Order) => {
-    const updated = await updateOrderStatus(orderToUpdate.id, 'Entregue'); // Prisma enum
+    const updated = await updateOrderStatus(orderToUpdate.id, 'Entregue'); 
     if (updated) {
        updateOrderInState(updated);
-       // Manter modal aberto para registrar pagamento
        setSelectedOrderForDetails(updated); 
        toast({ title: "Pedido Entregue", description: `Pedido ${orderToUpdate.id} marcado como entregue. Registre o pagamento.` });
     } else {
@@ -163,7 +166,11 @@ export default function PizzaFlowDashboard() {
             toastMessage = `Status do pedido ${updatedOrderData.id} alterado para ${updatedOrderData.status}.`;
         }
         toast({ title: "Sucesso", description: toastMessage });
-        setSelectedOrderForDetails(updatedOrder); // Atualiza o modal com os novos dados
+        setSelectedOrderForDetails(updatedOrder); 
+        if (updatedOrder.status === 'Entregue' && updatedOrder.paymentStatus === 'Pago') {
+             // Option to auto-close modal after payment confirmation and delivery
+             // setSelectedOrderForDetails(null);
+        }
     } else {
         toast({ title: "Erro", description: "Falha ao atualizar detalhes do pedido.", variant: "destructive"});
     }
@@ -201,10 +208,11 @@ export default function PizzaFlowDashboard() {
             textAlign='left'
           />
           <div className="flex gap-2">
-            <Button onClick={handleSimulateNewOrder} variant="default">
+            <Button onClick={handleSimulateNewOrder} variant="default" disabled={isLoading}>
+              {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               <Pizza className="mr-2 h-4 w-4" /> Simular Pedido
             </Button>
-            <Button onClick={handleOptimizeMultiRoute} variant="outline" disabled={waitingPickupOrders.length === 0}>
+            <Button onClick={handleOptimizeMultiRoute} variant="outline" disabled={waitingPickupOrders.length < 2 || isLoading}>
                 <Route className="mr-2 h-4 w-4" /> Otimizar Múltiplas Entregas
             </Button>
           </div>
@@ -221,7 +229,6 @@ export default function PizzaFlowDashboard() {
             </div>
         )}
 
-        {/* Coluna de Pedidos Pendentes Separada e Destacada */}
         {pendingOrders.length > 0 && !errorLoading && (
             <div className="mb-8 p-4 border-2 border-primary rounded-lg shadow-lg bg-primary/5">
                  <div className="flex items-center mb-4">

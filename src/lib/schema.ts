@@ -22,7 +22,7 @@ export const deliveryPersons = pgTable('delivery_persons', {
   name: varchar('name', { length: 255 }).notNull(),
   vehicleDetails: varchar('vehicle_details', { length: 255 }),
   licensePlate: varchar('license_plate', { length: 20 }),
-  isActive: boolean('is_active').notNull().default(true), // Default to active
+  isActive: boolean('is_active').notNull().default(true), 
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
 });
@@ -68,7 +68,7 @@ export const orders = pgTable('orders', {
   deliveredAt: timestamp('delivered_at', { withTimezone: true }),
   estimatedDeliveryTime: varchar('estimated_delivery_time', { length: 100 }),
   deliveryPerson: varchar('delivery_person', { length: 255 }), 
-  // deliveryPersonId: text('delivery_person_id'), // Temporarily commented out
+  deliveryPersonId: text('delivery_person_id').references(() => deliveryPersons.id, { onDelete: 'set null' }), 
   paymentType: paymentTypeEnum('payment_type'),
   paymentStatus: paymentStatusEnum('payment_status').notNull().default('Pendente'),
   notes: text('notes'),
@@ -76,13 +76,13 @@ export const orders = pgTable('orders', {
   nfeLink: text('nfe_link'),
   appliedCouponCode: varchar('applied_coupon_code', { length: 100 }),
   appliedCouponDiscount: decimal('applied_coupon_discount', { precision: 10, scale: 2 }),
-  couponId: text('coupon_id'),
+  couponId: text('coupon_id').references(() => coupons.id, { onDelete: 'set null' }),
 });
 
 export const orderItems = pgTable('order_items', {
   id: text('id').primaryKey(),
-  orderId: text('order_id').notNull().references(() => orders.id, { onDelete: 'cascade' }), // Adicionado onDelete cascade
-  menuItemId: text('menu_item_id').notNull().references(() => menuItems.id, { onDelete: 'restrict' }), // onDelete restrict para evitar excluir item de cardápio usado
+  orderId: text('order_id').notNull().references(() => orders.id, { onDelete: 'cascade' }), 
+  menuItemId: text('menu_item_id').notNull().references(() => menuItems.id, { onDelete: 'restrict' }), 
   name: varchar('name', { length: 255 }).notNull(),
   quantity: integer('quantity').notNull(),
   price: decimal('price', { precision: 10, scale: 2 }).notNull(),
@@ -101,10 +101,10 @@ export const orderRelations = relations(orders, ({ many, one }) => ({
     fields: [orders.couponId],
     references: [coupons.id],
   }),
-  // deliveryPersonAssigned: one(deliveryPersons, { // Temporarily commented out
-  //   fields: [orders.deliveryPersonId],
-  //   references: [deliveryPersons.id],
-  // }),
+  deliveryPersonAssigned: one(deliveryPersons, { 
+    fields: [orders.deliveryPersonId],
+    references: [deliveryPersons.id],
+  }),
 }));
 
 export const orderItemRelations = relations(orderItems, ({ one }) => ({
@@ -123,7 +123,7 @@ export const couponRelations = relations(coupons, ({ many }) => ({
 }));
 
 export const deliveryPersonRelations = relations(deliveryPersons, ({ many }) => ({
-  // orders: many(orders, { relationName: 'assignedOrders' }), // Temporarily commented out as it implies deliveryPersonId FK
+  orders: many(orders, { relationName: 'assignedOrders' }), 
 }));
 
 export const schema = {

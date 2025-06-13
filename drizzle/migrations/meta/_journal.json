@@ -8,6 +8,13 @@
       "when": 1749816103342,
       "tag": "0000_mute_gamora",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1749839489002,
+      "tag": "0001_gifted_ikaris",
+      "breakpoints": true
     }
   ]
 }

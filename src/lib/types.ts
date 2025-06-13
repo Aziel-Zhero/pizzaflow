@@ -46,7 +46,6 @@ export interface DeliveryPerson {
   isActive: boolean;
   createdAt: string; // ISO string
   updatedAt: string; // ISO string
-  // orders?: Order[]; // Relação se necessário
 }
 
 export interface Order {
@@ -63,8 +62,8 @@ export interface Order {
   deliveredAt?: string;
   estimatedDeliveryTime?: string;
   deliveryPerson?: string; // Nome do entregador
-  // deliveryPersonId?: string | null; // ID do entregador (FK) - Temporarily commented out
-  // deliveryPersonFull?: DeliveryPerson | null; // Objeto completo do entregador, se populado - Temporarily commented out
+  deliveryPersonId?: string | null; // ID do entregador (FK)
+  deliveryPersonFull?: DeliveryPerson | null; // Objeto completo do entregador, se populado
   paymentType?: PaymentType | null; // Prisma enum will be mapped
   paymentStatus: PaymentStatus; // Prisma enum will be mapped
   notes?: string;
@@ -77,7 +76,7 @@ export interface Order {
   coupon?: Coupon | null;
 }
 
-export const PIZZERIA_ADDRESS = "Pizzaria Planeta - Central, Av. Sabores Celestiais 123, Cidade Astral, CA 45678";
+export const PIZZERIA_ADDRESS = "Rua João Paulo de Camargo, 98 - Crispim, Pindamonhangaba - SP, 12402-170";
 
 export interface DailyRevenue {
   date: string; // Format YYYY-MM-DD or user-friendly like DD/MM
@@ -100,6 +99,12 @@ export interface CouponUsageData {
     totalDiscountAmount: number;
 }
 
+export interface DeliveryPersonStat {
+    name: string;
+    deliveryCount: number;
+    isActive: boolean;
+}
+
 export interface DashboardAnalyticsData {
   totalOrders: number;
   totalRevenue: number;
@@ -108,7 +113,7 @@ export interface DashboardAnalyticsData {
   dailyRevenue: DailyRevenue[];
   timeEstimates: TimeEstimateData;
   couponUsage: CouponUsageData;
-  // deliveryPersonStats: Array<{ name: string; deliveryCount: number; isActive: boolean; }>; // Para futura implementação
+  deliveryPersonStats: DeliveryPersonStat[];
 }
 
 export interface MenuItem {
@@ -149,28 +154,29 @@ export interface NewOrderClientData {
     couponCode?: string;
 }
 
-// Tipo para resposta da API de CEP (ex: BrasilAPI ou Geoapify)
-// Geoapify pode ter uma estrutura um pouco diferente, adaptar conforme necessário.
-export interface CepAddress {
-  cep?: string;
-  street?: string;
-  address_line1?: string; // Geoapify usa address_line1
-  address_line2?: string; // Geoapify usa address_line2 (contém bairro, cidade, estado)
-  postcode?: string; // Geoapify
-  neighborhood?: string;
-  city?: string;
-  state?: string;
-  country?: string; // Geoapify
-  lon?: number; // Geoapify
-  lat?: number; // Geoapify
-  fullAddress?: string; // Campo construído para conveniência
-}
-
-
 export interface Coordinates {
   lat: number;
   lon: number;
 }
+
+export interface CepAddress {
+  cep?: string;
+  street?: string;
+  address_line1?: string; 
+  address_line2?: string; 
+  postcode?: string; 
+  district?: string; // Geoapify uses 'district' for Bairro
+  suburb?: string; // Geoapify sometimes uses 'suburb'
+  city?: string;
+  state?: string;
+  state_code?: string; // Geoapify uses 'state_code' for UF
+  country?: string; 
+  country_code?: string;
+  lon?: number; 
+  lat?: number; 
+  fullAddress?: string; 
+}
+
 
 export interface GeoapifyGeocodeResult extends Coordinates {
   address: string; // Endereço original para referência
@@ -180,19 +186,17 @@ export interface GeoapifyGeocodeResult extends Coordinates {
 export interface MultiStopOrderInfo {
   orderId: string;
   customerAddress: string;
-  // customerCoordinates?: Coordinates; // Será preenchido pelo fluxo
 }
 
 export interface OptimizeMultiDeliveryRouteInput {
   pizzeriaAddress: string;
-  // pizzeriaCoordinates?: Coordinates; // Será preenchido pelo fluxo
   ordersToDeliver: MultiStopOrderInfo[];
 }
 
 export interface OptimizedRouteLeg {
   orderIds: string[];
   description: string;
-  geoapifyRoutePlannerUrl: string; // Substituído googleMapsUrl
+  geoapifyRoutePlannerUrl: string; 
   distanceMeters?: number;
   timeSeconds?: number;
 }
@@ -209,7 +213,8 @@ export interface GeoapifyRouteInfo {
 }
 
 export interface OptimizeDeliveryRouteOutput {
-  optimizedRoute: string; // Mantido como string para a URL do planejador de rotas
+  optimizedRoute: string; 
   distance?: number;
   time?: number;
 }
+

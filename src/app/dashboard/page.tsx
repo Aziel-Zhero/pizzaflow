@@ -3,17 +3,20 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import AppHeader from '@/components/pizzaflow/AppHeader';
-import type { DashboardAnalyticsData, OrderStatus } from '@/lib/types';
+import type { DashboardAnalyticsData, OrderStatus, DeliveryPersonStat } from '@/lib/types';
 import { getDashboardAnalytics, exportOrdersToCSV } from '@/app/actions';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { Loader2, Package, DollarSign, ListChecks, TrendingUp, Download, ClockIcon, TicketIcon, RefreshCcw } from 'lucide-react';
+import { Loader2, Package, DollarSign, ListChecks, TrendingUp, Download, ClockIcon, TicketIcon, RefreshCcw, Users, CalendarDays, Filter } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { ChartContainer, ChartTooltipContent } from '@/components/ui/chart';
 import type { ChartConfig } from '@/components/ui/chart';
 import { Badge } from '@/components/ui/badge';
 import SplitText from '@/components/common/SplitText';
+import { DatePickerWithRange, type DateRange } from '@/components/ui/date-picker-with-range'; // Import DatePickerWithRange
+import { addDays, format } from "date-fns"
+
 
 const PIZZERIA_NAME = "Pizzaria Planeta";
 const AUTO_REFRESH_INTERVAL = 60000; // 60 segundos
@@ -47,32 +50,44 @@ export default function AnalyticsDashboardPage() {
   const [analyticsData, setAnalyticsData] = useState<DashboardAnalyticsData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
+  const [dateRange, setDateRange] = useState<DateRange | undefined>({
+    from: subDays(new Date(), 29), // Default to last 30 days
+    to: new Date(),
+  });
   const { toast } = useToast();
 
-  const fetchData = useCallback(async (showLoader = true) => {
+  const fetchData = useCallback(async (showLoader = true, range?: DateRange) => {
     if (showLoader) setIsLoading(true);
     try {
-      // TODO: Implementar passagem de filtros de data no futuro
-      const data = await getDashboardAnalytics(); 
+      const period = range?.from && range?.to 
+        ? { startDate: range.from, endDate: range.to } 
+        : undefined;
+      const data = await getDashboardAnalytics(period); 
       setAnalyticsData(data);
     } catch (error) {
       toast({ title: "Erro ao Carregar Dashboard", description: "Não foi possível buscar os dados de análise. Verifique o console.", variant: "destructive" });
       console.error("Failed to fetch analytics:", error);
-      setAnalyticsData(null); // Limpa para evitar mostrar dados antigos ou quebrados
+      setAnalyticsData(null); 
     } finally {
       if (showLoader) setIsLoading(false);
     }
   }, [toast]);
 
   useEffect(() => {
-    fetchData(true); // Fetch inicial
-    const intervalId = setInterval(() => fetchData(false), AUTO_REFRESH_INTERVAL); // Auto-refresh
+    fetchData(true, dateRange); 
+    const intervalId = setInterval(() => fetchData(false, dateRange), AUTO_REFRESH_INTERVAL); 
     return () => clearInterval(intervalId);
-  }, [fetchData]);
+  }, [fetchData, dateRange]);
 
   const handleManualRefresh = () => {
-    fetchData(true); // Fetch com loader
+    fetchData(true, dateRange); 
   };
+  
+  const handleDateRangeChange = (newRange: DateRange | undefined) => {
+    setDateRange(newRange);
+    // fetchData will be called by useEffect due to dateRange dependency change
+  };
+
 
   const handleExportCSV = async () => {
     setIsExporting(true);
@@ -107,7 +122,7 @@ export default function AnalyticsDashboardPage() {
   };
 
 
-  if (isLoading && !analyticsData) { // Mostra loader apenas se não houver dados antigos para exibir
+  if (isLoading && !analyticsData) { 
     return (
       <div className="flex flex-col min-h-screen">
         <AppHeader appName={PIZZERIA_NAME} />
@@ -137,8 +152,7 @@ export default function AnalyticsDashboardPage() {
   }
 
   const formatCurrency = (value: number | string | undefined): string => {
-    const numericValue = Number(value); // Convert string to number, handles existing numbers fine
-    // If conversion results in NaN (e.g., undefined, non-numeric string), default to 0
+    const numericValue = Number(value); 
     const safeValue = isNaN(numericValue) ? 0 : numericValue;
     return `R$ ${safeValue.toFixed(2).replace('.', ',')}`;
   };
@@ -147,14 +161,15 @@ export default function AnalyticsDashboardPage() {
     <div className="flex flex-col min-h-screen bg-background">
       <AppHeader appName={PIZZERIA_NAME} />
       <main className="flex-grow container mx-auto px-2 sm:px-4 py-6">
-         <div className="flex flex-wrap justify-between items-center mb-8 gap-2">
+         <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
             <SplitText 
                 text="Dashboard de Análises" 
                 as="h1" 
                 className="text-3xl font-headline font-bold text-primary"
                 textAlign='left'
             />
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2 items-center">
+                <DatePickerWithRange date={dateRange} onDateChange={handleDateRangeChange} className="max-w-xs"/>
                 <Button onClick={handleManualRefresh} variant="outline" size="sm" disabled={isLoading}>
                     <RefreshCcw className={`mr-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
                     {isLoading ? "Atualizando..." : "Atualizar"}
@@ -174,7 +189,7 @@ export default function AnalyticsDashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{formatCurrency(analyticsData.totalRevenue)}</div>
-              <p className="text-xs text-muted-foreground">Receita de todos os pedidos pagos</p>
+              <p className="text-xs text-muted-foreground">Receita de pedidos pagos no período</p>
             </CardContent>
           </Card>
           <Card className="shadow-lg">
@@ -184,7 +199,7 @@ export default function AnalyticsDashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{analyticsData.totalOrders}</div>
-              <p className="text-xs text-muted-foreground">Todos os pedidos não cancelados</p>
+              <p className="text-xs text-muted-foreground">Pedidos não cancelados no período</p>
             </CardContent>
           </Card>
           <Card className="shadow-lg">
@@ -194,7 +209,7 @@ export default function AnalyticsDashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{formatCurrency(analyticsData.averageOrderValue)}</div>
-              <p className="text-xs text-muted-foreground">Valor médio por pedido</p>
+              <p className="text-xs text-muted-foreground">Valor médio por pedido no período</p>
             </CardContent>
           </Card>
           <Card className="shadow-lg">
@@ -208,7 +223,7 @@ export default function AnalyticsDashboardPage() {
                     ? `${analyticsData.timeEstimates.averageTimeToDeliveryMinutes} min` 
                     : "N/A"}
                 </div>
-              <p className="text-xs text-muted-foreground">Do pedido à entrega (entregues)</p>
+              <p className="text-xs text-muted-foreground">Pedidos entregues no período</p>
             </CardContent>
           </Card>
            <Card className="shadow-lg">
@@ -218,16 +233,16 @@ export default function AnalyticsDashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{analyticsData.couponUsage?.totalCouponsUsed || 0}</div>
-              <p className="text-xs text-muted-foreground">Total descontado: {formatCurrency(analyticsData.couponUsage?.totalDiscountAmount)}</p>
+              <p className="text-xs text-muted-foreground">Desconto: {formatCurrency(analyticsData.couponUsage?.totalDiscountAmount)} (no período)</p>
             </CardContent>
           </Card>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          <Card className="shadow-lg col-span-1 lg:col-span-2">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <Card className="shadow-lg lg:col-span-2">
             <CardHeader>
-              <CardTitle>Receita Diária (Últimos 7 Dias)</CardTitle>
-              <CardDescription>Visualização da receita gerada por dia.</CardDescription>
+              <CardTitle>Receita Diária</CardTitle>
+              <CardDescription>Visualização da receita gerada por dia {dateRange?.from && dateRange.to ? `de ${format(dateRange.from, "dd/MM")} a ${format(dateRange.to, "dd/MM")}` : "(últimos 7 dias)"}.</CardDescription>
             </CardHeader>
             <CardContent className="h-[350px] w-full">
               {analyticsData.dailyRevenue.length > 0 ? (
@@ -247,19 +262,19 @@ export default function AnalyticsDashboardPage() {
                   </ResponsiveContainer>
                 </ChartContainer>
               ) : (
-                <p className="text-muted-foreground text-center py-10">Nenhuma receita nos últimos 7 dias para exibir.</p>
+                <p className="text-muted-foreground text-center py-10">Nenhuma receita no período selecionado para exibir.</p>
               )}
             </CardContent>
           </Card>
           
-          <Card className="shadow-lg col-span-1 lg:col-span-1">
+           <Card className="shadow-lg lg:col-span-1">
             <CardHeader>
-              <CardTitle>Distribuição de Status dos Pedidos</CardTitle>
-              <CardDescription>Como os pedidos estão distribuídos por status.</CardDescription>
+              <CardTitle>Status dos Pedidos</CardTitle>
+              <CardDescription>Distribuição dos pedidos por status no período.</CardDescription>
             </CardHeader>
-            <CardContent className="h-[350px] w-full flex items-center justify-center">
-              {analyticsData.ordersByStatus.length > 0 ? (
-                 <ChartContainer config={chartConfigOrderStatus} className="h-full w-full aspect-square">
+            <CardContent className="h-[350px] w-full flex flex-col items-center justify-center">
+              {analyticsData.ordersByStatus.reduce((sum, s) => sum + s.value, 0) > 0 ? (
+                 <ChartContainer config={chartConfigOrderStatus} className="h-[250px] w-full aspect-square">
                    <ResponsiveContainer width="100%" height="100%">
                       <PieChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
                         <RechartsTooltip 
@@ -267,13 +282,13 @@ export default function AnalyticsDashboardPage() {
                            content={<ChartTooltipContent hideLabel nameKey="name" />}
                         />
                         <Pie
-                          data={analyticsData.ordersByStatus}
+                          data={analyticsData.ordersByStatus.filter(s => s.value > 0)} // Filter out zero-value statuses for cleaner chart
                           dataKey="value"
                           nameKey="name"
                           cx="50%"
                           cy="50%"
-                          outerRadius={100} 
-                          innerRadius={40} 
+                          outerRadius={80} 
+                          innerRadius={30} 
                           labelLine={true} 
                           label={({ cx, cy, midAngle, outerRadius, percent, index, name, value }) => {
                             const RADIAN = Math.PI / 180;
@@ -294,7 +309,7 @@ export default function AnalyticsDashboardPage() {
                             );
                           }}
                         >
-                          {analyticsData.ordersByStatus.map((entry, index) => (
+                          {analyticsData.ordersByStatus.filter(s => s.value > 0).map((entry, index) => (
                             <Cell key={`cell-${index}`} fill={entry.fill} stroke={entry.fill} />
                           ))}
                         </Pie>
@@ -302,31 +317,50 @@ export default function AnalyticsDashboardPage() {
                     </ResponsiveContainer>
                  </ChartContainer>
               ) : (
-                 <p className="text-muted-foreground text-center py-10">Nenhum pedido para exibir a distribuição de status.</p>
+                 <p className="text-muted-foreground text-center py-10">Nenhum pedido no período selecionado para exibir a distribuição de status.</p>
               )}
-            </CardContent>
-          </Card>
-
-           <Card className="shadow-lg col-span-1 lg:col-span-1">
-            <CardHeader>
-              <CardTitle>Resumo dos Status</CardTitle>
-               <CardDescription>Contagem de pedidos por cada status.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3 max-h-[350px] overflow-y-auto">
-              {analyticsData.ordersByStatus.length > 0 ? analyticsData.ordersByStatus.map(statusData => (
-                <div key={statusData.name} className="flex items-center justify-between p-2 rounded-md hover:bg-muted/50">
-                  <div className="flex items-center">
-                    <span className="h-3 w-3 rounded-full mr-3 shrink-0" style={{ backgroundColor: statusData.fill }} />
-                    <span className="text-sm text-muted-foreground">{statusData.name}</span>
+               <div className="w-full mt-4 text-xs">
+                {analyticsData.ordersByStatus.filter(s => s.value > 0).map(statusData => (
+                  <div key={statusData.name} className="flex items-center justify-between py-0.5">
+                    <div className="flex items-center">
+                      <span className="h-2 w-2 rounded-full mr-2 shrink-0" style={{ backgroundColor: statusData.fill }} />
+                      <span className="text-muted-foreground">{statusData.name}</span>
+                    </div>
+                    <Badge variant="outline" className="font-semibold">{statusData.value}</Badge>
                   </div>
-                  <Badge variant="secondary" className="font-semibold">{statusData.value}</Badge>
-                </div>
-              )) : (
-                <p className="text-sm text-muted-foreground text-center py-4">Nenhum pedido para exibir.</p>
-              )}
+                ))}
+              </div>
             </CardContent>
           </Card>
 
+          <Card className="shadow-lg col-span-1 lg:col-span-3">
+            <CardHeader>
+                <CardTitle className="flex items-center">
+                    <Users className="mr-2 h-5 w-5 text-primary"/>
+                    Desempenho dos Entregadores (Ativos)
+                </CardTitle>
+                <CardDescription>
+                    Total de entregas concluídas no período selecionado.
+                    <br/>
+                    <span className="text-xs text-muted-foreground"> (Requer que a coluna 'delivery_person_id' na tabela 'orders' esteja corretamente migrada e populada para contagens precisas).</span>
+                </CardDescription>
+            </CardHeader>
+            <CardContent>
+                {analyticsData.deliveryPersonStats.length > 0 ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                        {analyticsData.deliveryPersonStats.map(person => (
+                            <Card key={person.name} className="bg-card/50 p-4">
+                                <CardTitle className="text-md">{person.name}</CardTitle>
+                                <p className="text-xl font-bold text-primary">{person.deliveryCount}</p>
+                                <p className="text-xs text-muted-foreground">entregas concluídas</p>
+                            </Card>
+                        ))}
+                    </div>
+                ) : (
+                     <p className="text-muted-foreground text-center py-6">Nenhum entregador ativo ou nenhuma entrega registrada no período.</p>
+                )}
+            </CardContent>
+          </Card>
         </div>
         <footer className="text-center py-6 border-t border-border text-sm text-muted-foreground mt-12">
           Pizza Planeta Flow &copy; {new Date().getFullYear()}
@@ -335,3 +369,4 @@ export default function AnalyticsDashboardPage() {
     </div>
   );
 }
+

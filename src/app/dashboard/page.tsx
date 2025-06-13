@@ -136,7 +136,12 @@ export default function AnalyticsDashboardPage() {
     );
   }
 
-  const formatCurrency = (value: number | undefined) => `R$ ${(value || 0).toFixed(2).replace('.', ',')}`;
+  const formatCurrency = (value: number | string | undefined): string => {
+    const numericValue = Number(value); // Convert string to number, handles existing numbers fine
+    // If conversion results in NaN (e.g., undefined, non-numeric string), default to 0
+    const safeValue = isNaN(numericValue) ? 0 : numericValue;
+    return `R$ ${safeValue.toFixed(2).replace('.', ',')}`;
+  };
 
   return (
     <div className="flex flex-col min-h-screen bg-background">

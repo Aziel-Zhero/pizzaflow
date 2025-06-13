@@ -10,7 +10,7 @@ if (!process.env.NEON_DATABASE_URL) {
 // Log para verificar se a URL está sendo lida (parcialmente, por segurança)
 console.log("NEON_DATABASE_URL (prefix):", process.env.NEON_DATABASE_URL.substring(0, process.env.NEON_DATABASE_URL.indexOf('@') > 0 ? process.env.NEON_DATABASE_URL.indexOf('@') : 30));
 
-
+ 
 const pool = new Pool({
   connectionString: process.env.NEON_DATABASE_URL,
   // ssl: {

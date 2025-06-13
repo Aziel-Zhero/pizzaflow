@@ -14,7 +14,7 @@ import { Loader2, UserPlus, Edit3, Trash2, Bike, UserCircle2 } from 'lucide-reac
 import SplitText from '@/components/common/SplitText';
 import type { DeliveryPerson } from '@/lib/types';
 import { getDeliveryPersons, addDeliveryPerson, updateDeliveryPerson, deleteDeliveryPerson } from '@/app/actions';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
 const PIZZERIA_NAME = "Pizzaria Planeta";

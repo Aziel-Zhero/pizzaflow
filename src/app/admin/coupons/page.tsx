@@ -17,7 +17,7 @@ import { Loader2, Ticket, PlusCircle, Edit3, Trash2 } from 'lucide-react';
 import SplitText from '@/components/common/SplitText';
 import type { Coupon, DiscountType } from '@/lib/types';
 import { getAllCoupons, createCoupon, updateCoupon } from '@/app/actions'; 
-import { format, parseISO, isValid } from 'date-fns';
+import { format, parseISO, isValid, isFuture } from 'date-fns';
 
 const PIZZERIA_NAME = "Pizzaria Planeta";
 

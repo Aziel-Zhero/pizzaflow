@@ -1,4 +1,5 @@
 
+
 # PizzaFlow - SaaS para Pizzaria Planeta
 
 PizzaFlow é uma aplicação web moderna e completa para gerenciamento de pizzarias, construída com Next.js e um stack de tecnologias robustas. Ele oferece um painel de controle intuitivo para gerenciar pedidos, cardápio, cupons, entregadores e visualizar análises de vendas.

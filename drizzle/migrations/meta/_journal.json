@@ -29,6 +29,13 @@
       "when": 1749843660975,
       "tag": "0003_unknown_golden_guardian",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1749924520754,
+      "tag": "0004_solid_bruce_banner",
+      "breakpoints": true
     }
   ]
 }

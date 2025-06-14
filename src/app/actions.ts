@@ -177,20 +177,20 @@ const mapDbOrderToOrderType = (dbOrder: any): Order => {
     };
   }
 
-  // let deliveryPersonFullData: DeliveryPerson | null = null; // Temporarily commented out
-  // if(dbOrder.deliveryPersonAssigned) { // Temporarily commented out
-  //   deliveryPersonFullData = { // Temporarily commented out
-  //       ...dbOrder.deliveryPersonAssigned, // Temporarily commented out
-  //       createdAt: dbOrder.deliveryPersonAssigned.createdAt instanceof Date ? dbOrder.deliveryPersonAssigned.createdAt.toISOString() : String(dbOrder.deliveryPersonAssigned.createdAt), // Temporarily commented out
-  //       updatedAt: dbOrder.deliveryPersonAssigned.updatedAt instanceof Date ? dbOrder.deliveryPersonAssigned.updatedAt.toISOString() : String(dbOrder.deliveryPersonAssigned.updatedAt), // Temporarily commented out
-  //   } // Temporarily commented out
-  // } // Temporarily commented out
+  let deliveryPersonFullData: DeliveryPerson | null = null;
+  if(dbOrder.deliveryPersonAssigned) {
+    deliveryPersonFullData = {
+        ...dbOrder.deliveryPersonAssigned,
+        createdAt: dbOrder.deliveryPersonAssigned.createdAt instanceof Date ? dbOrder.deliveryPersonAssigned.createdAt.toISOString() : String(dbOrder.deliveryPersonAssigned.createdAt),
+        updatedAt: dbOrder.deliveryPersonAssigned.updatedAt instanceof Date ? dbOrder.deliveryPersonAssigned.updatedAt.toISOString() : String(dbOrder.deliveryPersonAssigned.updatedAt),
+    }
+  }
 
   return {
     ...dbOrder,
     items,
     coupon: couponData,
-    // deliveryPersonFull: deliveryPersonFullData, // Temporarily commented out
+    deliveryPersonFull: deliveryPersonFullData,
     totalAmount: parseFloat(dbOrder.totalAmount as string),
     appliedCouponDiscount: dbOrder.appliedCouponDiscount ? parseFloat(dbOrder.appliedCouponDiscount as string) : null,
     createdAt: dbOrder.createdAt instanceof Date ? dbOrder.createdAt.toISOString() : String(dbOrder.createdAt),
@@ -207,7 +207,7 @@ export async function getOrders(): Promise<Order[]> {
       with: {
         items: true,
         coupon: true,
-        // deliveryPersonAssigned: true, // Temporarily commented out
+        deliveryPersonAssigned: true,
       },
       orderBy: [desc(ordersTable.createdAt)],
     });
@@ -227,7 +227,7 @@ export async function getOrderById(orderId: string): Promise<Order | null> {
       with: {
         items: true,
         coupon: true,
-        // deliveryPersonAssigned: true, // Temporarily commented out
+        deliveryPersonAssigned: true,
       },
     });
 
@@ -281,7 +281,7 @@ export async function assignDelivery(orderId: string, route: string, deliveryPer
       status: 'SaiuParaEntrega',
       optimizedRoute: route,
       deliveryPerson: deliveryPersonName,
-      // deliveryPersonId: deliveryPersonId || null, // Temporarily commented out
+      deliveryPersonId: deliveryPersonId || null,
       updatedAt: new Date(),
     };
 
@@ -319,7 +319,7 @@ export async function assignMultiDelivery(plan: OptimizeMultiDeliveryRouteOutput
         status: 'SaiuParaEntrega',
         optimizedRoute: leg.geoapifyRoutePlannerUrl,
         deliveryPerson: deliveryPersonName,
-        // deliveryPersonId: deliveryPersonId || null, // Temporarily commented out
+        deliveryPersonId: deliveryPersonId || null,
         updatedAt: new Date(),
       };
 
@@ -383,7 +383,7 @@ export async function updateOrderDetails(
     }
 
     if (fullUpdatedOrderDataFromClient.deliveryPerson !== undefined) updatePayload.deliveryPerson = fullUpdatedOrderDataFromClient.deliveryPerson;
-    // if (fullUpdatedOrderDataFromClient.deliveryPersonId !== undefined) updatePayload.deliveryPersonId = fullUpdatedOrderDataFromClient.deliveryPersonId; // Temporarily commented out
+    if (fullUpdatedOrderDataFromClient.deliveryPersonId !== undefined) updatePayload.deliveryPersonId = fullUpdatedOrderDataFromClient.deliveryPersonId;
     if (fullUpdatedOrderDataFromClient.optimizedRoute !== undefined) updatePayload.optimizedRoute = fullUpdatedOrderDataFromClient.optimizedRoute;
 
     console.log("actions.ts: Update payload being sent to DB:", JSON.stringify(updatePayload, null, 2));
@@ -484,7 +484,7 @@ export async function addNewOrder(newOrderData: NewOrderClientData): Promise<Ord
       couponId: finalCouponId,
       createdAt: new Date(),
       updatedAt: new Date(),
-      // deliveryPersonId: null, // Temporarily commented out
+      deliveryPersonId: null, 
     };
     console.log("actions.ts: addNewOrder - Order data to insert:", JSON.stringify(orderToInsert, null, 2));
 
@@ -528,7 +528,7 @@ export async function addNewOrder(newOrderData: NewOrderClientData): Promise<Ord
       with: {
         items: true,
         coupon: true,
-        // deliveryPersonAssigned: true, // Temporarily commented out
+        deliveryPersonAssigned: true,
       }
     });
 
@@ -610,13 +610,16 @@ async function geocodeWithGeoapify(address: string): Promise<Coordinates | null>
       return null;
     }
     const url = `https://api.geoapify.com/v1/geocode/search?text=${encodeURIComponent(address)}&apiKey=${GEOAPIFY_API_KEY}&limit=1&lang=pt&country=br`;
+    console.log(`actions.ts: geocodeWithGeoapify URL: ${url.replace(GEOAPIFY_API_KEY, "********")}`);
     try {
       const response = await fetch(url);
+      const responseBodyText = await response.text();
       if (!response.ok) {
-        console.error(`Geoapify Geocoding API error (direct): ${response.status} - ${await response.text()}`);
+        console.error(`Geoapify Geocoding API error (direct): ${response.status} - ${responseBodyText}`);
         return null;
       }
-      const data = await response.json() as any;
+      const data = JSON.parse(responseBodyText) as any;
+      console.log(`actions.ts: geocodeWithGeoapify response for "${address}":`, JSON.stringify(data, null, 2));
       if (data.features && data.features.length > 0) {
         const { lat, lon } = data.features[0].properties;
         return { lat, lon };
@@ -636,14 +639,17 @@ async function getRouteWithGeoapify(origin: Coordinates, destination: Coordinate
     const waypointsString = `${origin.lat},${origin.lon}|${destination.lat},${destination.lon}`;
     const apiUrl = `https://api.geoapify.com/v1/routing?waypoints=${waypointsString}&mode=drive&apiKey=${GEOAPIFY_API_KEY}`;
     const routePlannerBaseUrl = `https://www.geoapify.com/route-planner?waypoints=${waypointsString}&mode=drive`;
+    console.log(`actions.ts: getRouteWithGeoapify URL: ${apiUrl.replace(GEOAPIFY_API_KEY, "********")}`);
 
     try {
       const response = await fetch(apiUrl);
+      const responseBodyText = await response.text();
       if (!response.ok) {
-        console.error(`Geoapify Routing API error (direct): ${response.status} - ${await response.text()}`);
+        console.error(`Geoapify Routing API error (direct): ${response.status} - ${responseBodyText}`);
         return null;
       }
-      const data = await response.json() as any;
+      const data = JSON.parse(responseBodyText) as any;
+       console.log(`actions.ts: getRouteWithGeoapify response:`, JSON.stringify(data, null, 2));
       if (data.features && data.features.length > 0 && data.features[0].properties) {
         const properties = data.features[0].properties;
         return {
@@ -689,6 +695,7 @@ export async function optimizeRouteAction(pizzeriaAddress: string, customerAddre
             time: routeInfo.time
         };
     } else {
+        // Fallback to Google Maps if Geoapify route fails for some reason
         return { optimizedRoute: `https://www.google.com/maps/dir/?api=1&origin=${pizzeriaCoords.lat},${pizzeriaCoords.lon}&destination=${customerCoords.lat},${customerCoords.lon}&travelmode=driving` };
     }
 }
@@ -775,9 +782,12 @@ export async function getDashboardAnalytics(
   }));
 
   const dailyRevenueData: DailyRevenue[] = [];
+  // Determinar o período do loop para a receita diária
   const today = new Date();
-  const loopStartDate = startDate || startOfDay(subDays(today, 6)); 
+  // Se não houver período, usar os últimos 7 dias (ou 30, como estava antes). Para este exemplo, 7.
+  const loopStartDate = startDate || startOfDay(subDays(today, 6));
   const loopEndDate = endDate || endOfDay(today);
+
 
   for (let day = loopStartDate; day <= loopEndDate; day = addDays(day, 1)) {
     const start = startOfDay(day);
@@ -788,15 +798,15 @@ export async function getDashboardAnalytics(
       .where(and(
         notCancelledFilter,
         paidFilter,
-        gte(ordersTable.createdAt, start),
+        gte(ordersTable.createdAt, start), // Usar createdAt para receita do dia de criação do pedido pago
         lte(ordersTable.createdAt, end)
       ));
     dailyRevenueData.push({
       date: format(day, "yyyy-MM-dd"),
       name: format(day, "dd/MM", { locale: ptBR }),
-      Receita: dailyRevenueResult[0]?.value || 0,
+      Receita: dailyRevenueResult[0]?.value || 0, // Garantir que seja 0 se não houver receita
     });
-    if (dailyRevenueData.length >= 365 && !period) break; 
+    if (dailyRevenueData.length >= 365 && !period) break; // Limitar se não houver filtro de período
   }
 
 
@@ -807,6 +817,8 @@ export async function getDashboardAnalytics(
         eq(ordersTable.status, 'Entregue'),
         isNotNull(ordersTable.deliveredAt),
         isNotNull(ordersTable.createdAt),
+        // Para o tempo de entrega, geralmente se filtra pela data de entrega,
+        // mas se o período se refere à data de criação do pedido, mantenha como estava:
         gte(ordersTable.createdAt, startDate), 
         lte(ordersTable.createdAt, endDate)
     );
@@ -849,47 +861,49 @@ export async function getDashboardAnalytics(
       .from(deliveryPersonsTable)
       .where(eq(deliveryPersonsTable.isActive, true));
     
-    // if (activePersons.length > 0) { // Temporarily returning all active persons with 0 deliveries
-        // const personIds = activePersons.map(p => p.id);
+    if (activePersons.length > 0) {
+        const personIds = activePersons.map(p => p.id);
         
-        // let deliveryCountConditions: SQL | undefined = and(
-        //     eq(ordersTable.status, 'Entregue'),
-        //     isNotNull(ordersTable.deliveryPersonId),
-        //     inArray(ordersTable.deliveryPersonId, personIds)
-        // );
-        // if (dateFilter && startDate && endDate) {
-        //     deliveryCountConditions = and(
-        //         deliveryCountConditions,
-        //         gte(ordersTable.deliveredAt, startDate), 
-        //         lte(ordersTable.deliveredAt, endDate)
-        //     );
-        // }
+        let deliveryCountConditions: SQL | undefined = and(
+            eq(ordersTable.status, 'Entregue'), // Pedidos realmente entregues
+            isNotNull(ordersTable.deliveryPersonId),
+            inArray(ordersTable.deliveryPersonId, personIds)
+        );
+        if (dateFilter && startDate && endDate) {
+            // Filtrar pela data de entrega, não de criação, para contagem de entregas no período
+            deliveryCountConditions = and(
+                deliveryCountConditions,
+                gte(ordersTable.deliveredAt, startDate), 
+                lte(ordersTable.deliveredAt, endDate)
+            );
+        }
 
-        // const deliveriesByPersonResult = await db
-        //     .select({
-        //         deliveryPersonId: ordersTable.deliveryPersonId,
-        //         count: dslCount(ordersTable.id)
-        //     })
-        //     .from(ordersTable)
-        //     .where(deliveryCountConditions)
-        //     .groupBy(ordersTable.deliveryPersonId);
+        const deliveriesByPersonResult = await db
+            .select({
+                deliveryPersonId: ordersTable.deliveryPersonId,
+                count: dslCount(ordersTable.id)
+            })
+            .from(ordersTable)
+            .where(deliveryCountConditions)
+            .groupBy(ordersTable.deliveryPersonId);
 
-        // const deliveriesMap = new Map<string, number>();
-        // deliveriesByPersonResult.forEach(item => {
-        //     if (item.deliveryPersonId) {
-        //         deliveriesMap.set(item.deliveryPersonId, item.count);
-        //     }
-        // });
+        const deliveriesMap = new Map<string, number>();
+        deliveriesByPersonResult.forEach(item => {
+            if (item.deliveryPersonId) { // Garante que deliveryPersonId não é null
+                deliveriesMap.set(item.deliveryPersonId, item.count);
+            }
+        });
         
         deliveryPersonStats = activePersons.map(p => ({
             name: p.name,
-            deliveryCount: 0, // deliveriesMap.get(p.id) || 0, // Temporarily 0
+            deliveryCount: deliveriesMap.get(p.id) || 0,
             isActive: p.isActive,
         })).sort((a,b) => b.deliveryCount - a.deliveryCount); 
-    // }
+    }
 
   } catch(e) {
     console.error("actions.ts: Error fetching delivery person stats. This might be due to missing 'orders.delivery_person_id' column or other DB issues. Listing active persons with 0 deliveries.", e);
+    // Fallback se a query acima falhar (ex: coluna delivery_person_id não existe)
     const activePersons = await db.select({name: deliveryPersonsTable.name, isActive: deliveryPersonsTable.isActive}).from(deliveryPersonsTable).where(eq(deliveryPersonsTable.isActive, true));
     deliveryPersonStats = activePersons.map(p => ({ name: p.name, deliveryCount: 0, isActive: p.isActive }));
   }
@@ -913,7 +927,7 @@ export async function exportOrdersToCSV(): Promise<string> {
     console.log("actions.ts: Exporting orders to CSV with Drizzle...");
     try {
         const ordersData = await db.query.orders.findMany({
-            with: { items: true, coupon: true /*, deliveryPersonAssigned: true*/ }, // Temporarily commented out deliveryPersonAssigned
+            with: { items: true, coupon: true, deliveryPersonAssigned: true },
             orderBy: [desc(ordersTable.createdAt)],
         });
 
@@ -942,7 +956,7 @@ export async function exportOrdersToCSV(): Promise<string> {
             csvString += `"${order.totalAmount.toFixed(2)}";`;
             csvString += `"${order.appliedCouponCode || ''}";`;
             csvString += `"${(order.appliedCouponDiscount || 0).toFixed(2)}";`;
-            csvString += `"${order.deliveryPerson || ''}";`; // Using order.deliveryPerson (name string)
+            csvString += `"${order.deliveryPersonFull?.name || order.deliveryPerson || ''}";`;
             csvString += `"${order.nfeLink || ''}";`;
             csvString += `"${(order.notes || '').replace(/"/g, '""')}";`;
             csvString += `"${itemsString.replace(/"/g, '""')}"\n`;
@@ -967,18 +981,18 @@ export async function fetchAddressFromCep(cep: string): Promise<CepAddress | nul
   }
   console.log(`actions.ts: Buscando CEP ${cleanedCep} na Geoapify...`);
   try {
-    const url = `https://api.geoapify.com/v1/geocode/search?postcode=${cleanedCep}&country=br&lang=pt&limit=1&apiKey=${GEOAPIFY_API_KEY}`;
-    console.log(`actions.ts: Geoapify URL: ${url.replace(GEOAPIFY_API_KEY, "********")}`);
+    // Usando 'type=postcode' para buscas mais específicas de CEP e 'country=br'
+    const url = `https://api.geoapify.com/v1/geocode/search?postcode=${cleanedCep}&type=postcode&country=br&lang=pt&limit=1&apiKey=${GEOAPIFY_API_KEY}`;
+    console.log(`actions.ts: Geoapify CEP Search URL: ${url.replace(GEOAPIFY_API_KEY, "********")}`);
     const response = await fetch(url);
+    const responseBodyText = await response.text();
 
     if (!response.ok) {
-        const errorBody = await response.text();
-        console.error(`actions.ts: Geoapify Geocoding API (CEP) retornou erro ${response.status}. CEP: ${cleanedCep}. Body: ${errorBody}`);
+        console.error(`actions.ts: Geoapify Geocoding API (CEP) retornou erro ${response.status}. CEP: ${cleanedCep}. Body: ${responseBodyText}`);
         return null;
     }
-    const data = await response.json() as any;
+    const data = JSON.parse(responseBodyText) as any;
     console.log(`actions.ts: Geoapify CEP ${cleanedCep} response data:`, JSON.stringify(data, null, 2));
-
 
     if (data.features && data.features.length > 0) {
       const properties = data.features[0].properties;
@@ -986,37 +1000,43 @@ export async function fetchAddressFromCep(cep: string): Promise<CepAddress | nul
 
       const address: CepAddress = {
         cep: properties.postcode || cleanedCep,
-        street: properties.street || properties.road || '',
-        neighborhood: properties.suburb || properties.district || '', 
+        street: properties.street || properties.road || '', // 'road' é um fallback comum
+        number: properties.housenumber || '', // Geoapify pode retornar 'housenumber'
+        neighborhood: properties.suburb || properties.district || '', // 'suburb' ou 'district' para bairro
         city: properties.city || '',
-        state: properties.state_code || properties.state || '',
+        state: properties.state_code || properties.state || '', // 'state_code' é mais comum para UF
         country_code: properties.country_code || 'BR',
         lat: properties.lat,
         lon: properties.lon,
-        address_line1: properties.address_line1, 
-        address_line2: properties.address_line2, 
+        address_line1: properties.address_line1, // Linha de endereço completa, útil para fallback
+        address_line2: properties.address_line2, // Linha de endereço complementar
       };
 
+      // Fallback para address_line1 se street não for encontrado diretamente
       if (!address.street && address.address_line1) {
-        address.street = address.address_line1.replace(/,?\s*\d+[A-Za-z]*?(-\w+)?$/, '').trim();
+        // Tenta extrair a rua, removendo o número e informações de apartamento/bloco se presentes
+        address.street = address.address_line1.replace(/,?\s*\d+[A-Za-z]*?(-[A-Za-z0-9]+)?$/, '').trim();
       }
-      if (!address.neighborhood && address.address_line2) {
-        const parts = address.address_line2.split(',').map(p => p.trim());
-        if (parts.length > 0) address.neighborhood = parts[0]; 
+      
+      // Fallback para address_line2 para bairro, cidade, estado se não vierem em campos dedicados
+      if (address.address_line2) {
+          const parts = address.address_line2.split(',').map(p => p.trim());
+          if (!address.neighborhood && parts.length > 0) address.neighborhood = parts[0];
+          if (!address.city && parts.length > 1) {
+              const cityAndState = parts[1].split(' - ');
+              address.city = cityAndState[0];
+              if (!address.state && cityAndState.length > 1) address.state = cityAndState[1];
+          }
+          if (!address.state && parts.length > 2) { // Se cidade e estado estiverem separados
+             const stateMatch = parts[parts.length-1].match(/^([A-Z]{2})$/);
+             if(stateMatch && !address.state) address.state = stateMatch[1];
+          }
       }
-      if (!address.city && address.address_line2) {
-         const parts = address.address_line2.split(',').map(p => p.trim());
-         if (parts.length > 1) address.city = parts[1].replace(/\s*-\s*[A-Z]{2}$/, '').trim(); 
-         else if (!address.state && parts.length === 1) address.city = parts[0].replace(/\s*-\s*[A-Z]{2}$/, '').trim();
-      }
-       if (!address.state && address.address_line2) {
-         const stateMatch = address.address_line2.match(/-\s*([A-Z]{2})$/);
-         if (stateMatch) address.state = stateMatch[1];
-      }
-      if (!address.state && properties.state) address.state = properties.state; 
+
 
       let fullAddressParts = [];
       if (address.street) fullAddressParts.push(address.street);
+      if (address.number) fullAddressParts.push(address.number); // Incluir número se disponível
       if (address.neighborhood) fullAddressParts.push(address.neighborhood);
       if (address.city) fullAddressParts.push(address.city);
       if (address.state) fullAddressParts.push(address.state);
@@ -1239,34 +1259,30 @@ export async function getAvailableDeliveryPersons(): Promise<DeliveryPerson[]> {
             .where(eq(deliveryPersonsTable.isActive, true))
             .orderBy(asc(deliveryPersonsTable.name));
 
-        // Temporarily return all active persons until DB schema is fixed
-        console.warn("actions.ts: getAvailableDeliveryPersons - Temporarily returning ALL active persons due to missing orders.delivery_person_id. Fix DB schema.");
-        return allActivePersons.map(p => ({
+        // Buscar IDs de entregadores que estão em pedidos com status "SaiuParaEntrega"
+        const ordersOutForDelivery = await db
+            .selectDistinct({ deliveryPersonId: ordersTable.deliveryPersonId })
+            .from(ordersTable)
+            .where(and(
+                eq(ordersTable.status, 'SaiuParaEntrega'),
+                isNotNull(ordersTable.deliveryPersonId) 
+            ));
+            
+        const busyPersonIds = new Set(ordersOutForDelivery.map(o => o.deliveryPersonId).filter(id => id !== null) as string[]);
+        
+        // Filtrar os ativos que não estão ocupados
+        const availablePersons = allActivePersons.filter(person => !busyPersonIds.has(person.id));
+        
+        console.log(`actions.ts: Found ${availablePersons.length} available (active and not on active route) delivery persons.`);
+        return availablePersons.map(p => ({
             ...p,
             createdAt: p.createdAt!.toISOString(),
             updatedAt: p.updatedAt!.toISOString()
         }));
 
-        // const ordersOutForDelivery = await db
-        //     .selectDistinct({ deliveryPersonId: ordersTable.deliveryPersonId })
-        //     .from(ordersTable)
-        //     .where(and(
-        //         eq(ordersTable.status, 'SaiuParaEntrega'),
-        //         isNotNull(ordersTable.deliveryPersonId) 
-        //     ));
-            
-        // const busyPersonIds = new Set(ordersOutForDelivery.map(o => o.deliveryPersonId).filter(id => id !== null) as string[]);
-        // const availablePersons = allActivePersons.filter(person => !busyPersonIds.has(person.id));
-        
-        // console.log(`actions.ts: Found ${availablePersons.length} available (active and not on active route) delivery persons.`);
-        // return availablePersons.map(p => ({
-        //     ...p,
-        //     createdAt: p.createdAt!.toISOString(),
-        //     updatedAt: p.updatedAt!.toISOString()
-        // }));
-
     } catch (error) {
         console.error("actions.ts: Error fetching available delivery persons. This may be due to missing 'orders.delivery_person_id' column or related issues. Returning all active persons as a fallback.", error);
+        // Fallback em caso de erro (ex: coluna delivery_person_id não existe)
         const allActivePersonsFallback = await db
             .select()
             .from(deliveryPersonsTable)
@@ -1312,25 +1328,25 @@ export async function updateDeliveryPerson(id: string, data: Partial<Omit<Delive
 export async function deleteDeliveryPerson(id: string): Promise<boolean> {
   console.log("actions.ts: Deleting delivery person. ID:", id);
   try {
-    // let assignedOrdersCount = 0; // Temporarily disabling this check
-    // try {
-    //     const assignedOrdersResult = await db.select({ orderId: ordersTable.id })
-    //         .from(ordersTable)
-    //         .where(and(
-    //             eq(ordersTable.deliveryPersonId, id),
-    //             not(inArray(ordersTable.status, ['Entregue', 'Cancelado']))
-    //         ))
-    //         .limit(1);
-    //     assignedOrdersCount = assignedOrdersResult.length;
-    // } catch (e) {
-    //     console.warn("actions.ts: Could not check for assigned orders to delivery person (this might be due to 'orders.delivery_person_id' column issues). Proceeding with delete attempt carefully.", e);
-    // }
+    let assignedOrdersCount = 0;
+    try {
+        const assignedOrdersResult = await db.select({ orderId: ordersTable.id })
+            .from(ordersTable)
+            .where(and(
+                eq(ordersTable.deliveryPersonId, id),
+                not(inArray(ordersTable.status, ['Entregue', 'Cancelado']))
+            ))
+            .limit(1);
+        assignedOrdersCount = assignedOrdersResult.length;
+    } catch (e) {
+        console.warn("actions.ts: Could not check for assigned orders to delivery person (this might be due to 'orders.delivery_person_id' column issues). Proceeding with delete attempt carefully.", e);
+    }
 
-    // if (assignedOrdersCount > 0) {
-    //     const errorMessage = `Entregador está associado a pedidos ativos e não pode ser excluído. Finalize ou reatribua os pedidos primeiro.`;
-    //     console.warn(`actions.ts: Cannot delete delivery person ${id}, assigned to ${assignedOrdersCount} active order(s).`);
-    //     throw new Error(errorMessage);
-    // }
+    if (assignedOrdersCount > 0) {
+        const errorMessage = `Entregador está associado a ${assignedOrdersCount} pedido(s) ativo(s) e não pode ser excluído. Finalize ou reatribua os pedidos primeiro.`;
+        console.warn(`actions.ts: Cannot delete delivery person ${id}, assigned to ${assignedOrdersCount} active order(s).`);
+        throw new Error(errorMessage);
+    }
 
     const result = await db.delete(deliveryPersonsTable).where(eq(deliveryPersonsTable.id, id)).returning({ id: deliveryPersonsTable.id });
     const success = result.length > 0;

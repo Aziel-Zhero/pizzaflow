@@ -19,7 +19,8 @@ import Confetti from 'react-confetti';
 
 const PIZZERIA_NAME = "Pizzaria Planeta";
 
-const GENERIC_NEXT_PURCHASE_COUPON_CODE = "VOLTESEMPRE15";
+// Removido o cupom fixo daqui, pois pode não existir
+// const GENERIC_NEXT_PURCHASE_COUPON_CODE = "VOLTESEMPRE15"; 
 
 const statusDetails: Record<OrderStatus, { 
     message: string; 
@@ -71,7 +72,8 @@ const statusDetails: Record<OrderStatus, {
         colorClass: "border-green-500 bg-green-500/10",
         iconColorClass: "text-green-500",
         finalMessage: "Bom apetite!",
-        charismaticMessage: `Que alegria ter você como cliente! 🎉 Esperamos que sua pizza esteja incrível. Use o cupom ${GENERIC_NEXT_PURCHASE_COUPON_CODE} para ter 15% de desconto na sua próxima aventura gastronômica conosco!`
+        // Mensagem carismática genérica, sem cupom específico hardcoded
+        charismaticMessage: `Que alegria ter você como cliente! 🎉 Esperamos que sua pizza esteja incrível. Fique de olho em nossas promoções futuras!` 
     },
     Cancelado: { 
         message: "Pedido Cancelado", 
@@ -117,7 +119,7 @@ export default function OrderStatusPage() {
     }
     if (showLoadingSpinner) setIsLoading(true);
     try {
-      const fetchedOrder = await getOrderById(orderIdFromParam); // Passa o ID da URL
+      const fetchedOrder = await getOrderById(orderIdFromParam); 
       if (fetchedOrder) {
         setOrder(fetchedOrder);
         setLastUpdated(new Date());
@@ -267,7 +269,7 @@ export default function OrderStatusPage() {
                     Obrigado! Fazer Novo Pedido
                 </Button>
             ) : (
-                <Button onClick={() => fetchOrderDetails(true)} variant="outline" disabled={isLoading && order === null}> {/* Correção: isLoading apenas quando order é null */}
+                <Button onClick={() => fetchOrderDetails(true)} variant="outline" disabled={isLoading && order === null}>
                 <RefreshCw className={`mr-2 h-4 w-4 ${isLoading && order === null ? 'animate-spin' : ''}`} />
                 Atualizar Status
                 </Button>

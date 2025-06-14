@@ -62,8 +62,8 @@ export interface Order {
   deliveredAt?: string;
   estimatedDeliveryTime?: string;
   deliveryPerson?: string; // Nome do entregador
-  // deliveryPersonId?: string | null; // ID do entregador (FK) // Temporarily commented out
-  // deliveryPersonFull?: DeliveryPerson | null; // Objeto completo do entregador, se populado // Temporarily commented out
+  deliveryPersonId?: string | null; // ID do entregador (FK)
+  deliveryPersonFull?: DeliveryPerson | null; // Objeto completo do entregador, se populado
   paymentType?: PaymentType | null; // Prisma enum will be mapped
   paymentStatus: PaymentStatus; // Prisma enum will be mapped
   notes?: string;
@@ -164,7 +164,7 @@ export interface CepAddress {
   street?: string;
   address_line1?: string;
   address_line2?: string;
-  postcode?: string;
+  postcode?: string; // Geoapify uses 'postcode'
   district?: string; // Geoapify uses 'district' for Bairro
   suburb?: string; // Geoapify sometimes uses 'suburb'
   city?: string;
@@ -217,3 +217,4 @@ export interface OptimizeDeliveryRouteOutput {
   distance?: number;
   time?: number;
 }
+

@@ -68,7 +68,7 @@ export const orders = pgTable('orders', {
   deliveredAt: timestamp('delivered_at', { withTimezone: true }),
   estimatedDeliveryTime: varchar('estimated_delivery_time', { length: 100 }),
   deliveryPerson: varchar('delivery_person', { length: 255 }),
-  // deliveryPersonId: text('delivery_person_id').references(() => deliveryPersons.id, { onDelete: 'set null' }), // Temporarily commented out
+  deliveryPersonId: text('delivery_person_id').references(() => deliveryPersons.id, { onDelete: 'set null' }), // Descomentado
   paymentType: paymentTypeEnum('payment_type'),
   paymentStatus: paymentStatusEnum('payment_status').notNull().default('Pendente'),
   notes: text('notes'),
@@ -101,10 +101,10 @@ export const orderRelations = relations(orders, ({ many, one }) => ({
     fields: [orders.couponId],
     references: [coupons.id],
   }),
-  // deliveryPersonAssigned: one(deliveryPersons, { // Temporarily commented out
-  //   fields: [orders.deliveryPersonId],
-  //   references: [deliveryPersons.id],
-  // }),
+  deliveryPersonAssigned: one(deliveryPersons, { // Descomentado e corrigido
+    fields: [orders.deliveryPersonId],
+    references: [deliveryPersons.id],
+  }),
 }));
 
 export const orderItemRelations = relations(orderItems, ({ one }) => ({
@@ -123,7 +123,7 @@ export const couponRelations = relations(coupons, ({ many }) => ({
 }));
 
 export const deliveryPersonRelations = relations(deliveryPersons, ({ many }) => ({
-  // orders: many(orders, { relationName: 'assignedOrders' }), // Temporarily commented out
+  orders: many(orders, { relationName: 'assignedOrders' }), // Descomentado
 }));
 
 export const schema = {
@@ -144,3 +144,4 @@ export const schema = {
   couponRelations,
   deliveryPersonRelations,
 };
+

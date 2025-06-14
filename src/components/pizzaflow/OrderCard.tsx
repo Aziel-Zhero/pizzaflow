@@ -30,6 +30,15 @@ const statusColors: Record<OrderStatus, string> = {
   Cancelado: 'bg-red-500 hover:bg-red-600',
 };
 
+const formatOrderStatus = (status: OrderStatus): string => {
+  switch (status) {
+    case "EmPreparo": return "Em Preparo";
+    case "AguardandoRetirada": return "Aguardando Retirada";
+    case "SaiuParaEntrega": return "Saiu para Entrega";
+    default: return status;
+  }
+};
+
 const OrderCard: FC<OrderCardProps> = ({
   order,
   onTakeOrder,
@@ -61,7 +70,7 @@ const OrderCard: FC<OrderCardProps> = ({
       <CardHeader className="pb-3">
         <div className="flex justify-between items-start">
           <CardTitle className="text-lg font-headline break-all">{displayOrderId.substring(0, 13)}...</CardTitle>
-          <Badge className={`${statusColors[order.status]} text-primary-foreground`}>{order.status}</Badge>
+          <Badge className={`${statusColors[order.status]} text-primary-foreground`}>{formatOrderStatus(order.status)}</Badge>
         </div>
         <div className="text-xs text-muted-foreground flex items-center mt-1">
           <Clock className="h-3 w-3 mr-1" />

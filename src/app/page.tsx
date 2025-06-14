@@ -109,7 +109,7 @@ export default function PizzaFlowDashboard() {
 
   const handleOptimizeMultiRoute = () => {
     const ordersToOptimize = orders.filter(o => o.status === 'AguardandoRetirada');
-    if (ordersToOptimize.length < 2) { // Changed from 0 to < 2
+    if (ordersToOptimize.length < 2) { 
         toast({ title: "Poucos Pedidos", description: "A otimização de múltiplas rotas requer pelo menos 2 pedidos aguardando retirada.", variant: "default" });
         return;
     }

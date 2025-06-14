@@ -16,7 +16,7 @@ import type {
     Coordinates,
     OptimizedRouteLeg
 } from '@/lib/types';
-import fetch from 'node-fetch'; // Usando node-fetch conforme solicitado
+import fetch from 'node-fetch'; 
 
 const GEOAPIFY_API_KEY = process.env.GEOAPIFY_API_KEY;
 
@@ -30,7 +30,7 @@ const CoordinatesSchema = z.object({
 const geocodeAddressTool = ai.defineTool(
   {
     name: 'geocodeAddressTool',
-    description: 'Converts a physical address into geographic coordinates (latitude and longitude) using Geoapify Geocoding API.',
+    description: 'Converts a physical address into geographic coordinates (latitude and longitude) using Geoapify Geocoding API. Prioritize Brazilian addresses if country is not specified.',
     inputSchema: z.object({
       address: z.string().describe('The full street address to geocode. Example: "Rua Exemplo, 123, Bairro, Cidade, Estado, CEP"'),
     }),
@@ -41,18 +41,24 @@ const geocodeAddressTool = ai.defineTool(
       console.error("Geoapify API key is missing.");
       throw new Error("Geoapify API key is not configured.");
     }
-    const url = `https://api.geoapify.com/v1/geocode/search?text=${encodeURIComponent(input.address)}&apiKey=${GEOAPIFY_API_KEY}&limit=1`;
+    const url = `https://api.geoapify.com/v1/geocode/search?text=${encodeURIComponent(input.address)}&apiKey=${GEOAPIFY_API_KEY}&limit=1&lang=pt&filter=countrycode:br`;
+    console.log(`Geoapify Geocoding URL for address "${input.address}": ${url.replace(GEOAPIFY_API_KEY, "******")}`);
     try {
       const response = await fetch(url);
+      const responseBodyText = await response.text(); // Read body once
       if (!response.ok) {
-        const errorBody = await response.text();
-        console.error(`Geoapify Geocoding API error: ${response.status} - ${errorBody}`);
+        console.error(`Geoapify Geocoding API error for address "${input.address}": ${response.status} - ${responseBodyText}`);
         return null;
       }
-      const data = await response.json() as any;
+      const data = JSON.parse(responseBodyText) as any;
+      console.log(`Geoapify Geocoding response for "${input.address}":`, JSON.stringify(data, null, 2));
       if (data.features && data.features.length > 0) {
         const { lat, lon } = data.features[0].properties;
-        return { lat, lon };
+        if (lat && lon) {
+            return { lat, lon };
+        }
+        console.warn(`Geoapify Geocoding: Lat/Lon missing in response for address: ${input.address}`, data.features[0].properties);
+        return null;
       }
       console.warn(`Geoapify Geocoding: No coordinates found for address: ${input.address}`);
       return null;
@@ -91,22 +97,29 @@ const getGeoapifyRouteTool = ai.defineTool(
     const waypointsString = input.waypoints.map(wp => `${wp.lat},${wp.lon}`).join('|');
     const apiUrl = `https://api.geoapify.com/v1/routing?waypoints=${waypointsString}&mode=${input.mode}&apiKey=${GEOAPIFY_API_KEY}`;
     const routePlannerBaseUrl = `https://www.geoapify.com/route-planner?waypoints=${waypointsString}&mode=${input.mode}`;
+    console.log(`Geoapify Routing API URL: ${apiUrl.replace(GEOAPIFY_API_KEY, "******")}`);
 
     try {
       const response = await fetch(apiUrl);
+      const responseBodyText = await response.text(); // Read body once
       if (!response.ok) {
-        const errorBody = await response.text();
-        console.error(`Geoapify Routing API error: ${response.status} - ${errorBody}`);
+        console.error(`Geoapify Routing API error: ${response.status} - ${responseBodyText}`);
         return null;
       }
-      const data = await response.json() as any;
+      const data = JSON.parse(responseBodyText) as any;
+      console.log(`Geoapify Routing response:`, JSON.stringify(data, null, 2));
+
       if (data.features && data.features.length > 0 && data.features[0].properties) {
         const properties = data.features[0].properties;
-        return {
-          routePlannerUrl: routePlannerBaseUrl, // Use the constructed planner URL
-          distance: properties.distance, // in meters
-          time: properties.time, // in seconds
-        };
+        if (properties.distance !== undefined && properties.time !== undefined) {
+             return {
+                routePlannerUrl: routePlannerBaseUrl, 
+                distance: properties.distance, 
+                time: properties.time, 
+            };
+        }
+        console.warn(`Geoapify Routing: Distance or Time missing in response for waypoints: ${waypointsString}`, properties);
+        return { routePlannerUrl: routePlannerBaseUrl, distance: 0, time: 0 }; // Return URL even if distance/time missing
       }
       console.warn(`Geoapify Routing: No route found for waypoints: ${waypointsString}`);
       return null;
@@ -138,8 +151,8 @@ const OptimizedRouteLegSchema = z.object({
 });
 
 const OptimizeMultiDeliveryRouteOutputSchema = z.object({
-  optimizedRoutePlan: z.array(OptimizedRouteLegSchema).describe('Um plano de rota otimizado, possivelmente com múltiplas "pernas" ou uma única rota consolidada.'),
-  summary: z.string().optional().describe('Um resumo geral da otimização ou sugestões.'),
+  optimizedRoutePlan: z.array(OptimizedRouteLegSchema).describe('Um plano de rota otimizado, possivelmente com múltiplas "pernas" ou uma única rota consolidada. Este plano é para UM entregador.'),
+  summary: z.string().optional().describe('Um resumo geral da otimização ou sugestões. Mencione se este plano pode ser parte de uma estratégia maior envolvendo múltiplos entregadores se apropriado.'),
 });
 
 export async function optimizeMultiDeliveryRoute(input: OptimizeMultiDeliveryRouteInput): Promise<OptimizeMultiDeliveryRouteOutput> {
@@ -153,6 +166,7 @@ const multiRoutePrompt = ai.definePrompt({
   tools: [geocodeAddressTool, getGeoapifyRouteTool],
   prompt: `Você é um especialista em logística de entrega de pizzas e otimização de rotas usando a API Geoapify.
 Seu objetivo é criar um plano de entrega eficiente para múltiplos pedidos a partir de um endereço de pizzaria para UM ÚNICO ENTREGADOR.
+Se houver muitos pedidos, você pode sugerir no sumário que este plano é para um entregador e que outros entregadores podem ser necessários para outros grupos de pedidos.
 
 Fluxo de trabalho:
 1.  **Geocodificação Obrigatória**:
@@ -173,7 +187,7 @@ Fluxo de trabalho:
         *   'geoapifyRoutePlannerUrl': a URL retornada pela ferramenta 'getGeoapifyRouteTool'.
         *   'distanceMeters': a distância retornada pela ferramenta 'getGeoapifyRouteTool'.
         *   'timeSeconds': o tempo retornado pela ferramenta 'getGeoapifyRouteTool'.
-    *   'summary': inclua um resumo geral, como "Rota otimizada para X pedidos." e mencione quaisquer pedidos que não puderam ser incluídos devido a falhas na geocodificação.
+    *   'summary': inclua um resumo geral, como "Rota otimizada para X pedidos." e mencione quaisquer pedidos que não puderam ser incluídos devido a falhas na geocodificação. Se o número de pedidos for alto, sugira que este é um plano para um entregador e que outros podem ser necessários.
 
 Exemplo de chamada para 'getGeoapifyRouteTool' se a pizzaria for P e os clientes A, B, C na ordem otimizada:
 waypoints: [ {lat:P_lat, lon:P_lon}, {lat:A_lat, lon:A_lon}, {lat:B_lat, lon:B_lon}, {lat:C_lat, lon:C_lon} ]
@@ -216,7 +230,6 @@ const optimizeMultiDeliveryRouteFlow = ai.defineFlow(
 
         if (!output || !output.optimizedRoutePlan) {
             console.warn("AI failed to produce a valid multi-route plan or output was null. Input:", input);
-            // Gerar um fallback se a IA falhar completamente
             let fallbackSummary = "Otimização da IA falhou em produzir um plano válido. ";
             const pizzeriaCoords = await geocodeAddressTool({address: input.pizzeriaAddress});
             if (!pizzeriaCoords) {
@@ -259,6 +272,3 @@ const optimizeMultiDeliveryRouteFlow = ai.defineFlow(
     }
   }
 );
-
-// O fluxo de otimização de rota única (optimizeDeliveryRouteFlow) foi removido daqui
-// pois a lógica agora é feita diretamente em actions.ts com chamadas diretas às APIs Geoapify.

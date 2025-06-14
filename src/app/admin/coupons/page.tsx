@@ -16,7 +16,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Loader2, Ticket, PlusCircle, Edit3, Trash2 } from 'lucide-react';
 import SplitText from '@/components/common/SplitText';
 import type { Coupon, DiscountType } from '@/lib/types';
-import { getAllCoupons, createCoupon } from '@/app/actions'; // Assumindo que teremos update e delete
+import { getAllCoupons, createCoupon, updateCoupon } from '@/app/actions'; 
 import { format, parseISO, isValid } from 'date-fns';
 
 const PIZZERIA_NAME = "Pizzaria Planeta";
@@ -27,7 +27,7 @@ const initialCouponFormState: Omit<Coupon, 'id' | 'createdAt' | 'updatedAt' | 't
   discountType: 'PERCENTAGE',
   discountValue: 0,
   isActive: true,
-  expiresAt: undefined, // String ISO ou undefined
+  expiresAt: undefined, 
   usageLimit: undefined,
   minOrderAmount: undefined,
 };
@@ -37,7 +37,7 @@ export default function CouponManagementPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isFormOpen, setIsFormOpen] = useState(false);
-  const [currentCoupon, setCurrentCoupon] = useState<typeof initialCouponFormState & {price?: string}>({...initialCouponFormState, discountValue: 0}); // discountValue como number
+  const [currentCoupon, setCurrentCoupon] = useState<typeof initialCouponFormState & { id?: string; discountValue: number | string }>({...initialCouponFormState, discountValue: ''});
   const [isEditing, setIsEditing] = useState(false);
   const { toast } = useToast();
 
@@ -68,12 +68,12 @@ export default function CouponManagementPage() {
   };
   
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target; // value é 'yyyy-MM-dd'
+    const { name, value } = e.target; 
     if (value) {
-        // Adiciona T00:00:00.000Z para garantir que é o início do dia em UTC
         const dateObj = parseISO(value + "T00:00:00.000Z"); 
         if(isValid(dateObj)) {
-            setCurrentCoupon(prev => ({ ...prev, [name]: dateObj.toISOString() }));
+             // Store as YYYY-MM-DD string for input, but will be converted to ISO string on submit
+            setCurrentCoupon(prev => ({ ...prev, [name]: value }));
         } else {
             setCurrentCoupon(prev => ({ ...prev, [name]: undefined }));
         }
@@ -93,18 +93,17 @@ export default function CouponManagementPage() {
 
   const handleOpenForm = (coupon?: Coupon) => {
     if (coupon) {
-      // Formatar expiresAt para 'yyyy-MM-dd' para o input type="date"
       const expiresAtForInput = coupon.expiresAt ? format(parseISO(coupon.expiresAt), 'yyyy-MM-dd') : '';
       setCurrentCoupon({
         ...coupon,
-        expiresAt: expiresAtForInput, // Armazena como string no formato do input date
-        discountValue: Number(coupon.discountValue), // Garantir que é number
+        expiresAt: expiresAtForInput, 
+        discountValue: Number(coupon.discountValue), 
         usageLimit: coupon.usageLimit ?? undefined,
         minOrderAmount: coupon.minOrderAmount ?? undefined,
       });
       setIsEditing(true);
     } else {
-      setCurrentCoupon({...initialCouponFormState, discountValue: 0});
+      setCurrentCoupon({...initialCouponFormState, discountValue: ''});
       setIsEditing(false);
     }
     setIsFormOpen(true);
@@ -112,17 +111,17 @@ export default function CouponManagementPage() {
   
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!currentCoupon.code || !currentCoupon.discountType || currentCoupon.discountValue <= 0) {
+    const discountVal = Number(String(currentCoupon.discountValue).replace(',', '.'));
+    if (!currentCoupon.code || !currentCoupon.discountType || isNaN(discountVal) || discountVal <= 0) {
         toast({ title: "Campos Obrigatórios", description: "Código, tipo e valor do desconto (maior que zero) são obrigatórios.", variant: "destructive" });
         return;
     }
     
     setIsSubmitting(true);
     
-    // Converter expiresAt de volta para ISO string completa se houver valor, ou null/undefined
     let finalExpiresAt = currentCoupon.expiresAt;
     if (currentCoupon.expiresAt && typeof currentCoupon.expiresAt === 'string' && currentCoupon.expiresAt.match(/^\d{4}-\d{2}-\d{2}$/)) {
-        finalExpiresAt = parseISO(currentCoupon.expiresAt + "T23:59:59.999Z").toISOString(); // Fim do dia selecionado em UTC
+        finalExpiresAt = parseISO(currentCoupon.expiresAt + "T23:59:59.999Z").toISOString(); 
     } else if (!currentCoupon.expiresAt) {
         finalExpiresAt = undefined;
     }
@@ -130,21 +129,21 @@ export default function CouponManagementPage() {
 
     const couponDataForApi = {
         ...currentCoupon,
-        discountValue: Number(currentCoupon.discountValue),
+        discountValue: discountVal,
         usageLimit: currentCoupon.usageLimit ? Number(currentCoupon.usageLimit) : undefined,
         minOrderAmount: currentCoupon.minOrderAmount ? Number(currentCoupon.minOrderAmount) : undefined,
         expiresAt: finalExpiresAt,
     };
+    // Remover o ID do objeto se estivermos criando um novo cupom
+    const { id: couponId, ...dataToSend } = couponDataForApi;
 
 
     try {
-      // A action `createCoupon` foi melhorada e pode ser usada.
-      // Futuramente, teríamos uma action `updateCoupon`. Por ora, a criação já deve funcionar.
-      if (isEditing) {
-        toast({ title: "Edição Futura", description: "A edição de cupons será implementada em breve.", variant: "default" });
-        // await updateCouponAction(currentCoupon.id, couponDataForApi); 
+      if (isEditing && couponId) {
+        await updateCoupon(couponId, dataToSend as Omit<Coupon, 'id' | 'createdAt' | 'updatedAt' | 'timesUsed' | 'orders'>);
+        toast({ title: "Sucesso!", description: `Cupom "${couponDataForApi.code}" atualizado.`, variant: "default" });
       } else {
-        await createCoupon(couponDataForApi);
+        await createCoupon(dataToSend as Omit<Coupon, 'id' | 'createdAt' | 'updatedAt' | 'timesUsed' | 'orders'>);
         toast({ title: "Sucesso!", description: `Cupom "${couponDataForApi.code}" criado.`, variant: "default" });
       }
       fetchCoupons();
@@ -163,7 +162,6 @@ export default function CouponManagementPage() {
 
   const handleDeleteCoupon = (couponId: string) => {
       toast({ title: "Funcionalidade Futura", description: `A exclusão do cupom ${couponId} será implementada.` });
-      // Lógica para deletar cupom (chamar action)
   };
 
   return (
@@ -217,8 +215,8 @@ export default function CouponManagementPage() {
                   {coupon.expiresAt && <p><strong>Expira em:</strong> {format(parseISO(coupon.expiresAt), 'dd/MM/yyyy')}</p>}
                 </CardContent>
                  <CardFooter className="gap-2 border-t pt-4">
-                    <Button variant="outline" size="sm" onClick={() => handleOpenForm(coupon)} className="flex-1" disabled>
-                        <Edit3 className="mr-2 h-4 w-4" /> Editar (Em breve)
+                    <Button variant="outline" size="sm" onClick={() => handleOpenForm(coupon)} className="flex-1">
+                        <Edit3 className="mr-2 h-4 w-4" /> Editar
                     </Button>
                     <Button variant="destructive" size="sm" onClick={() => handleDeleteCoupon(coupon.id)} className="flex-1" disabled>
                         <Trash2 className="mr-2 h-4 w-4" /> Excluir (Em breve)
@@ -259,16 +257,16 @@ export default function CouponManagementPage() {
                         </div>
                         <div>
                             <Label htmlFor="discountValue">Valor do Desconto</Label>
-                            <Input id="discountValue" name="discountValue" type="number" min="0.01" step="0.01" 
-                                   value={currentCoupon.discountValue === 0 ? '' : String(currentCoupon.discountValue)} 
+                            <Input id="discountValue" name="discountValue" type="text" 
+                                   value={String(currentCoupon.discountValue)} 
                                    onChange={handleInputChange} required 
-                                   placeholder={currentCoupon.discountType === 'PERCENTAGE' ? 'Ex: 10 para 10%' : 'Ex: 5.50 para R$5,50'}/>
+                                   placeholder={currentCoupon.discountType === 'PERCENTAGE' ? 'Ex: 10 (para 10%)' : 'Ex: 5.50 (para R$5,50)'}/>
                         </div>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                         <div>
                             <Label htmlFor="minOrderAmount">Valor Mínimo do Pedido (R$, opcional)</Label>
-                            <Input id="minOrderAmount" name="minOrderAmount" type="number" min="0" step="0.01" 
+                            <Input id="minOrderAmount" name="minOrderAmount" type="text" 
                                    value={currentCoupon.minOrderAmount === undefined ? '' : String(currentCoupon.minOrderAmount)} 
                                    onChange={handleInputChange} placeholder="Deixe em branco se não houver"/>
                         </div>
@@ -282,7 +280,7 @@ export default function CouponManagementPage() {
                      <div>
                         <Label htmlFor="expiresAt">Data de Expiração (opcional)</Label>
                         <Input id="expiresAt" name="expiresAt" type="date" 
-                               value={currentCoupon.expiresAt || ''} // Já deve estar no formato 'yyyy-MM-dd'
+                               value={currentCoupon.expiresAt || ''} 
                                onChange={handleDateChange} />
                     </div>
                     <div className="flex items-center space-x-2">

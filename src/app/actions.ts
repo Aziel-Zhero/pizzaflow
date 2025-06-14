@@ -34,7 +34,7 @@ import type {
     DeliveryPersonStat
 } from '@/lib/types';
 import { optimizeMultiDeliveryRoute as aiOptimizeMultiDeliveryRoute } from '@/ai/flows/optimize-delivery-route';
-import { format, subDays, parseISO, differenceInMinutes, startOfDay, endOfDay, isFuture, startOfMonth, endOfMonth, startOfYear, endOfYear } from 'date-fns';
+import { format, subDays, parseISO, differenceInMinutes, startOfDay, endOfDay, isFuture, startOfMonth, endOfMonth, startOfYear, endOfYear, addDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import crypto from 'crypto';
 import fetch from 'node-fetch';
@@ -177,20 +177,20 @@ const mapDbOrderToOrderType = (dbOrder: any): Order => {
     };
   }
 
-  // let deliveryPersonFullData: DeliveryPerson | null = null; // Temporarily commented out
-  // if(dbOrder.deliveryPersonAssigned) { // Temporarily commented out
-  //   deliveryPersonFullData = { // Temporarily commented out
-  //       ...dbOrder.deliveryPersonAssigned, // Temporarily commented out
-  //       createdAt: dbOrder.deliveryPersonAssigned.createdAt instanceof Date ? dbOrder.deliveryPersonAssigned.createdAt.toISOString() : String(dbOrder.deliveryPersonAssigned.createdAt), // Temporarily commented out
-  //       updatedAt: dbOrder.deliveryPersonAssigned.updatedAt instanceof Date ? dbOrder.deliveryPersonAssigned.updatedAt.toISOString() : String(dbOrder.deliveryPersonAssigned.updatedAt), // Temporarily commented out
-  //   } // Temporarily commented out
-  // } // Temporarily commented out
+  let deliveryPersonFullData: DeliveryPerson | null = null; 
+  if(dbOrder.deliveryPersonAssigned) { 
+    deliveryPersonFullData = { 
+        ...dbOrder.deliveryPersonAssigned, 
+        createdAt: dbOrder.deliveryPersonAssigned.createdAt instanceof Date ? dbOrder.deliveryPersonAssigned.createdAt.toISOString() : String(dbOrder.deliveryPersonAssigned.createdAt), 
+        updatedAt: dbOrder.deliveryPersonAssigned.updatedAt instanceof Date ? dbOrder.deliveryPersonAssigned.updatedAt.toISOString() : String(dbOrder.deliveryPersonAssigned.updatedAt), 
+    } 
+  } 
 
   return {
     ...dbOrder,
     items,
     coupon: couponData,
-    // deliveryPersonFull: deliveryPersonFullData, // Temporarily commented out
+    deliveryPersonFull: deliveryPersonFullData, 
     totalAmount: parseFloat(dbOrder.totalAmount as string),
     appliedCouponDiscount: dbOrder.appliedCouponDiscount ? parseFloat(dbOrder.appliedCouponDiscount as string) : null,
     createdAt: dbOrder.createdAt instanceof Date ? dbOrder.createdAt.toISOString() : String(dbOrder.createdAt),
@@ -207,7 +207,7 @@ export async function getOrders(): Promise<Order[]> {
       with: {
         items: true,
         coupon: true,
-        // deliveryPersonAssigned: true, // Temporarily commented out
+        deliveryPersonAssigned: true, 
       },
       orderBy: [desc(ordersTable.createdAt)],
     });
@@ -227,7 +227,7 @@ export async function getOrderById(orderId: string): Promise<Order | null> {
       with: {
         items: true,
         coupon: true,
-        // deliveryPersonAssigned: true, // Temporarily commented out
+        deliveryPersonAssigned: true, 
       },
     });
 
@@ -281,7 +281,7 @@ export async function assignDelivery(orderId: string, route: string, deliveryPer
       status: 'SaiuParaEntrega',
       optimizedRoute: route,
       deliveryPerson: deliveryPersonName,
-      // deliveryPersonId: deliveryPersonId || null, // Temporarily commented out
+      deliveryPersonId: deliveryPersonId || null, 
       updatedAt: new Date(),
     };
 
@@ -319,7 +319,7 @@ export async function assignMultiDelivery(plan: OptimizeMultiDeliveryRouteOutput
         status: 'SaiuParaEntrega',
         optimizedRoute: leg.geoapifyRoutePlannerUrl,
         deliveryPerson: deliveryPersonName,
-        // deliveryPersonId: deliveryPersonId || null, // Temporarily commented out
+        deliveryPersonId: deliveryPersonId || null, 
         updatedAt: new Date(),
       };
 
@@ -383,7 +383,7 @@ export async function updateOrderDetails(
     }
 
     if (fullUpdatedOrderDataFromClient.deliveryPerson !== undefined) updatePayload.deliveryPerson = fullUpdatedOrderDataFromClient.deliveryPerson;
-    // if (fullUpdatedOrderDataFromClient.deliveryPersonId !== undefined) updatePayload.deliveryPersonId = fullUpdatedOrderDataFromClient.deliveryPersonId; // Temporarily commented out
+    if (fullUpdatedOrderDataFromClient.deliveryPersonId !== undefined) updatePayload.deliveryPersonId = fullUpdatedOrderDataFromClient.deliveryPersonId; 
     if (fullUpdatedOrderDataFromClient.optimizedRoute !== undefined) updatePayload.optimizedRoute = fullUpdatedOrderDataFromClient.optimizedRoute;
 
     console.log("actions.ts: Update payload being sent to DB:", JSON.stringify(updatePayload, null, 2));
@@ -484,7 +484,7 @@ export async function addNewOrder(newOrderData: NewOrderClientData): Promise<Ord
       couponId: finalCouponId,
       createdAt: new Date(),
       updatedAt: new Date(),
-      // deliveryPersonId: null, // Temporarily commented out
+      deliveryPersonId: null, 
     };
     console.log("actions.ts: addNewOrder - Order data to insert:", JSON.stringify(orderToInsert, null, 2));
 
@@ -528,7 +528,7 @@ export async function addNewOrder(newOrderData: NewOrderClientData): Promise<Ord
       with: {
         items: true,
         coupon: true,
-        // deliveryPersonAssigned: true, // Temporarily commented out
+        deliveryPersonAssigned: true, 
       }
     });
 
@@ -723,8 +723,8 @@ export async function getDashboardAnalytics(
 ): Promise<DashboardAnalyticsData> {
   console.log("actions.ts: Fetching dashboard analytics with Drizzle...", period ? `Period: ${period.startDate} - ${period.endDate}` : "No period filter");
 
-  const startDate = period?.startDate ? (typeof period.startDate === 'string' ? parseISO(period.startDate) : period.startDate) : undefined;
-  const endDate = period?.endDate ? (typeof period.endDate === 'string' ? parseISO(period.endDate) : period.endDate) : undefined;
+  const startDate = period?.startDate ? (typeof period.startDate === 'string' ? startOfDay(parseISO(period.startDate)) : startOfDay(period.startDate)) : undefined;
+  const endDate = period?.endDate ? (typeof period.endDate === 'string' ? endOfDay(parseISO(period.endDate)) : endOfDay(period.endDate)) : undefined;
 
   const dateFilter = startDate && endDate
     ? and(gte(ordersTable.createdAt, startDate), lte(ordersTable.createdAt, endDate))
@@ -774,12 +774,12 @@ export async function getDashboardAnalytics(
     fill: statusColorsForCharts[s.status as OrderStatus] || 'hsl(var(--muted))',
   }));
 
-  const dailyRevenue: DashboardAnalyticsData['dailyRevenue'] = [];
+  const dailyRevenueData: DailyRevenue[] = [];
   const today = new Date();
-  const loopStartDate = startDate ? startOfDay(startDate) : startOfDay(subDays(today, 6));
-  const loopEndDate = endDate ? endOfDay(endDate) : endOfDay(today);
+  const loopStartDate = startDate || startOfDay(subDays(today, 6)); // Default to last 7 days if no period
+  const loopEndDate = endDate || endOfDay(today);
 
-  for (let day = loopStartDate; day <= loopEndDate; day = subDays(day, -1)) { // Corrected loop
+  for (let day = loopStartDate; day <= loopEndDate; day = addDays(day, 1)) {
     const start = startOfDay(day);
     const end = endOfDay(day);
 
@@ -791,24 +791,23 @@ export async function getDashboardAnalytics(
         gte(ordersTable.createdAt, start),
         lte(ordersTable.createdAt, end)
       ));
-    dailyRevenue.push({
+    dailyRevenueData.push({
       date: format(day, "yyyy-MM-dd"),
       name: format(day, "dd/MM", { locale: ptBR }),
       Receita: dailyRevenueResult[0]?.value || 0,
     });
-    if (dailyRevenue.length >= 31 && !period) break; // Limit to 31 days if no period specified
+    if (dailyRevenueData.length >= 31 && !period) break; 
   }
 
 
   let averageTimeToDeliveryMinutes: number | undefined = undefined;
   let deliveredWhereConditions: SQL | undefined = and(eq(ordersTable.status, 'Entregue'), isNotNull(ordersTable.deliveredAt), isNotNull(ordersTable.createdAt));
-  if (dateFilter) {
+  if (dateFilter && startDate && endDate) { // ensure startDate and endDate are defined
     deliveredWhereConditions = and(
         eq(ordersTable.status, 'Entregue'),
-        // dateFilter, // This dateFilter uses createdAt, for deliveredAt we need to adjust (No, filter createdAt is fine for delivered orders in period)
         isNotNull(ordersTable.deliveredAt),
         isNotNull(ordersTable.createdAt),
-        gte(ordersTable.createdAt, startDate), // Filter by createdAt for orders that were eventually delivered
+        gte(ordersTable.createdAt, startDate), 
         lte(ordersTable.createdAt, endDate)
     );
   }
@@ -849,53 +848,45 @@ export async function getDashboardAnalytics(
     const activePersons = await db.select({id: deliveryPersonsTable.id, name: deliveryPersonsTable.name, isActive: deliveryPersonsTable.isActive})
       .from(deliveryPersonsTable)
       .where(eq(deliveryPersonsTable.isActive, true));
+    
+    if (activePersons.length > 0) {
+        const personIds = activePersons.map(p => p.id);
+        
+        let deliveryCountConditions: SQL | undefined = and(
+            eq(ordersTable.status, 'Entregue'),
+            isNotNull(ordersTable.deliveryPersonId),
+            inArray(ordersTable.deliveryPersonId, personIds)
+        );
+        if (dateFilter && startDate && endDate) {
+            deliveryCountConditions = and(
+                deliveryCountConditions,
+                gte(ordersTable.deliveredAt, startDate), // Filter by deliveredAt for accurate count in period
+                lte(ordersTable.deliveredAt, endDate)
+            );
+        }
 
-    // If deliveryPersonId is not available on orders, we cannot accurately count deliveries per person yet.
-    // So, for now, we list active persons, and count will be 0 or "N/A" until schema is fixed.
-    // const deliveryPersonIdExistsInSchema = 'deliveryPersonId' in ordersTable; // This check is for Drizzle schema, not DB
+        const deliveriesByPersonResult = await db
+            .select({
+                deliveryPersonId: ordersTable.deliveryPersonId,
+                count: dslCount(ordersTable.id)
+            })
+            .from(ordersTable)
+            .where(deliveryCountConditions)
+            .groupBy(ordersTable.deliveryPersonId);
 
-    // This part of the query will fail if orders.deliveryPersonId doesn't exist in the DB.
-    // We'll keep it but log a warning if the schema is not ready.
-    // if (deliveryPersonIdExistsInSchema) { // Check based on Drizzle Schema, not DB
-    // The code below is commented out until the database schema is confirmed to have delivery_person_id
-    /*
-    const activeDeliveryPersonsWithDeliveries = await db
-      .select({
-        id: deliveryPersonsTable.id,
-        name: deliveryPersonsTable.name,
-        isActive: deliveryPersonsTable.isActive,
-        deliveryCount: sql<number>`COALESCE(COUNT(DISTINCT CASE WHEN ${ordersTable.status} = 'Entregue' THEN ${ordersTable.id} ELSE NULL END), 0)::int`.as('delivery_count'),
-      })
-      .from(deliveryPersonsTable)
-      .leftJoin(ordersTable,
-        and(
-          eq(ordersTable.deliveryPersonId, deliveryPersonsTable.id),
-          eq(ordersTable.status, 'Entregue'),
-          startDate && endDate ? gte(ordersTable.deliveredAt, startDate) : undefined,
-          startDate && endDate ? lte(ordersTable.deliveredAt, endDate) : undefined
-        )
-      )
-      .where(eq(deliveryPersonsTable.isActive, true))
-      .groupBy(deliveryPersonsTable.id, deliveryPersonsTable.name, deliveryPersonsTable.isActive)
-      .orderBy(desc(sql`delivery_count`));
-
-      deliveryPersonStats = activeDeliveryPersonsWithDeliveries.map(p => ({
-        name: p.name,
-        deliveryCount: p.deliveryCount,
-        isActive: p.isActive,
-      }));
-    */
-    // Fallback: List active delivery persons, count will be 0.
-    deliveryPersonStats = activePersons.map(p => ({
-        name: p.name,
-        deliveryCount: 0, // Set to 0 as we cannot count without deliveryPersonId on orders
-        isActive: p.isActive,
-    }));
-    console.warn("actions.ts: Delivery person stats are limited because 'orders.delivery_person_id' is likely missing or not used in queries. Counts will be 0.");
-    // } else {
-    //   console.warn("actions.ts: 'deliveryPersonId' column is not defined in the Drizzle schema for 'orders'. Delivery person stats will be limited.");
-    //   deliveryPersonStats = activePersons.map(p => ({ name: p.name, deliveryCount: 0, isActive: p.isActive }));
-    // }
+        const deliveriesMap = new Map<string, number>();
+        deliveriesByPersonResult.forEach(item => {
+            if (item.deliveryPersonId) {
+                deliveriesMap.set(item.deliveryPersonId, item.count);
+            }
+        });
+        
+        deliveryPersonStats = activePersons.map(p => ({
+            name: p.name,
+            deliveryCount: deliveriesMap.get(p.id) || 0,
+            isActive: p.isActive,
+        })).sort((a,b) => b.deliveryCount - a.deliveryCount); // Sort by most deliveries
+    }
 
   } catch(e) {
     console.error("actions.ts: Error fetching delivery person stats. This might be due to missing 'orders.delivery_person_id' column or other DB issues. Listing active persons with 0 deliveries.", e);
@@ -909,7 +900,7 @@ export async function getDashboardAnalytics(
     totalRevenue,
     averageOrderValue,
     ordersByStatus,
-    dailyRevenue,
+    dailyRevenue: dailyRevenueData,
     timeEstimates: { averageTimeToDeliveryMinutes },
     couponUsage,
     deliveryPersonStats,
@@ -922,7 +913,7 @@ export async function exportOrdersToCSV(): Promise<string> {
     console.log("actions.ts: Exporting orders to CSV with Drizzle...");
     try {
         const ordersData = await db.query.orders.findMany({
-            with: { items: true, coupon: true /*, deliveryPersonAssigned: true */ }, // deliveryPersonAssigned temporarily commented
+            with: { items: true, coupon: true, deliveryPersonAssigned: true }, 
             orderBy: [desc(ordersTable.createdAt)],
         });
 
@@ -951,8 +942,7 @@ export async function exportOrdersToCSV(): Promise<string> {
             csvString += `"${order.totalAmount.toFixed(2)}";`;
             csvString += `"${order.appliedCouponCode || ''}";`;
             csvString += `"${(order.appliedCouponDiscount || 0).toFixed(2)}";`;
-            // csvString += `"${order.deliveryPersonFull?.name || order.deliveryPerson || ''}";`; // Temporarily use order.deliveryPerson
-            csvString += `"${order.deliveryPerson || ''}";`;
+            csvString += `"${order.deliveryPersonFull?.name || order.deliveryPerson || ''}";`; 
             csvString += `"${order.nfeLink || ''}";`;
             csvString += `"${(order.notes || '').replace(/"/g, '""')}";`;
             csvString += `"${itemsString.replace(/"/g, '""')}"\n`;
@@ -977,15 +967,20 @@ export async function fetchAddressFromCep(cep: string): Promise<CepAddress | nul
   }
   console.log(`actions.ts: Buscando CEP ${cleanedCep} na Geoapify...`);
   try {
+    // Usando 'search' para mais flexibilidade, mas 'reverse' poderia ser usado se lat/lon já existissem.
+    // Para CEP, 'search' com postcode é mais apropriado.
     const url = `https://api.geoapify.com/v1/geocode/search?postcode=${cleanedCep}&country=br&lang=pt&limit=1&apiKey=${GEOAPIFY_API_KEY}`;
+    console.log(`actions.ts: Geoapify URL: ${url.replace(GEOAPIFY_API_KEY, "********")}`); // Log URL sem a chave
     const response = await fetch(url);
 
     if (!response.ok) {
         const errorBody = await response.text();
-        console.error(`actions.ts: Geoapify Geocoding API retornou erro ${response.status}. CEP: ${cleanedCep}. Body: ${errorBody}`);
+        console.error(`actions.ts: Geoapify Geocoding API (CEP) retornou erro ${response.status}. CEP: ${cleanedCep}. Body: ${errorBody}`);
         return null;
     }
     const data = await response.json() as any;
+    console.log(`actions.ts: Geoapify CEP ${cleanedCep} response data:`, JSON.stringify(data, null, 2));
+
 
     if (data.features && data.features.length > 0) {
       const properties = data.features[0].properties;
@@ -994,34 +989,36 @@ export async function fetchAddressFromCep(cep: string): Promise<CepAddress | nul
       const address: CepAddress = {
         cep: properties.postcode || cleanedCep,
         street: properties.street || properties.road || '',
-        neighborhood: properties.suburb || properties.district || '', // Prioritize suburb for Bairro as per Geoapify's common return
+        neighborhood: properties.suburb || properties.district || '', 
         city: properties.city || '',
-        state: properties.state_code || properties.state || '',
+        state: properties.state_code || properties.state || '', // Prioriza state_code (UF)
         country_code: properties.country_code || 'BR',
         lat: properties.lat,
         lon: properties.lon,
-        address_line1: properties.address_line1,
-        address_line2: properties.address_line2,
+        address_line1: properties.address_line1, // Rua e número, às vezes
+        address_line2: properties.address_line2, // Bairro, Cidade, Estado - útil para parse
       };
 
+      // Melhorar extração de dados se campos específicos estiverem vazios
       if (!address.street && address.address_line1) {
-        address.street = address.address_line1.split(',')[0].trim();
+        // Tenta pegar a rua de address_line1, removendo o número se presente
+        address.street = address.address_line1.replace(/,?\s*\d+[A-Za-z]*?(-\w+)?$/, '').trim();
       }
-      if ((!address.neighborhood || !address.city || !address.state) && address.address_line2) {
+      if (!address.neighborhood && address.address_line2) {
         const parts = address.address_line2.split(',').map(p => p.trim());
-        if (!address.neighborhood && parts.length > 0) address.neighborhood = parts[0]; // First part is often neighborhood
-        if (parts.length > 1) { // "Cidade - UF" or "Cidade"
-            const cityStatePart = parts[parts.length -1]; // Last part is usually City - UF or just City
-            const cityStateMatch = cityStatePart.match(/(.+?)\s*-\s*([A-Z]{2})$/);
-            if (cityStateMatch) {
-                if(!address.city) address.city = cityStateMatch[1].trim();
-                if(!address.state) address.state = cityStateMatch[2].trim();
-            } else if (!address.city) {
-                address.city = cityStatePart.trim();
-            }
-        }
-         if(!address.state && properties.state) address.state = properties.state; // Fallback to 'state' if 'state_code' failed or parsing failed
+        if (parts.length > 0) address.neighborhood = parts[0]; // Primeiro pode ser bairro
       }
+      if (!address.city && address.address_line2) {
+         const parts = address.address_line2.split(',').map(p => p.trim());
+         // City is often the middle part or last if no state code
+         if (parts.length > 1) address.city = parts[1].replace(/\s*-\s*[A-Z]{2}$/, '').trim(); // Remove - UF
+         else if (!address.state && parts.length === 1) address.city = parts[0].replace(/\s*-\s*[A-Z]{2}$/, '').trim();
+      }
+       if (!address.state && address.address_line2) {
+         const stateMatch = address.address_line2.match(/-\s*([A-Z]{2})$/);
+         if (stateMatch) address.state = stateMatch[1];
+      }
+      if (!address.state && properties.state) address.state = properties.state; // Fallback to 'state' if 'state_code' or parsing failed
 
       let fullAddressParts = [];
       if (address.street) fullAddressParts.push(address.street);
@@ -1029,7 +1026,8 @@ export async function fetchAddressFromCep(cep: string): Promise<CepAddress | nul
       if (address.city) fullAddressParts.push(address.city);
       if (address.state) fullAddressParts.push(address.state);
       address.fullAddress = fullAddressParts.join(', ').replace(/, $/, '');
-
+      
+      console.log("actions.ts: Parsed address from Geoapify:", address);
       return address;
     } else {
       console.warn(`actions.ts: CEP ${cleanedCep} não encontrado ou sem resultados na Geoapify.`);
@@ -1123,6 +1121,50 @@ export async function createCoupon(data: Omit<Coupon, 'id' | 'createdAt' | 'upda
     }
 }
 
+export async function updateCoupon(id: string, data: Partial<Omit<Coupon, 'id' | 'createdAt' | 'updatedAt' | 'timesUsed' | 'orders'>>): Promise<Coupon | null> {
+    console.log(`actions.ts: Updating coupon ${id} with Drizzle:`, JSON.stringify(data, null, 2));
+    try {
+        const couponToUpdate: Partial<typeof couponsTable.$inferInsert> = { updatedAt: new Date() };
+        if (data.code !== undefined) couponToUpdate.code = data.code;
+        if (data.description !== undefined) couponToUpdate.description = data.description;
+        if (data.discountType !== undefined) couponToUpdate.discountType = data.discountType;
+        if (data.discountValue !== undefined) couponToUpdate.discountValue = String(data.discountValue);
+        if (data.isActive !== undefined) couponToUpdate.isActive = data.isActive;
+        if (data.expiresAt !== undefined) couponToUpdate.expiresAt = data.expiresAt ? parseISO(data.expiresAt) : null;
+        if (data.usageLimit !== undefined) couponToUpdate.usageLimit = data.usageLimit;
+        if (data.minOrderAmount !== undefined) couponToUpdate.minOrderAmount = data.minOrderAmount ? String(data.minOrderAmount) : null;
+        
+        console.log("actions.ts: Coupon data to update in DB:", JSON.stringify(couponToUpdate, null, 2));
+
+        const [updatedCouponFromDb] = await db.update(couponsTable)
+            .set(couponToUpdate)
+            .where(eq(couponsTable.id, id))
+            .returning();
+        
+        if (!updatedCouponFromDb) {
+            console.warn(`actions.ts: Coupon ${id} not found for update or no change made.`);
+            return null;
+        }
+        console.log("actions.ts: Coupon updated successfully with Drizzle:", updatedCouponFromDb.id);
+        return {
+            ...updatedCouponFromDb,
+            discountValue: parseFloat(updatedCouponFromDb.discountValue as string),
+            minOrderAmount: updatedCouponFromDb.minOrderAmount ? parseFloat(updatedCouponFromDb.minOrderAmount as string) : undefined,
+            createdAt: updatedCouponFromDb.createdAt!.toISOString(),
+            updatedAt: updatedCouponFromDb.updatedAt!.toISOString(),
+            expiresAt: updatedCouponFromDb.expiresAt ? updatedCouponFromDb.expiresAt.toISOString() : undefined,
+            timesUsed: updatedCouponFromDb.timesUsed,
+        };
+    } catch (error) {
+        console.error(`actions.ts: Error updating coupon ${id} with Drizzle:`, error);
+        if (error instanceof Error && error.message.includes("unique constraint")) {
+             throw new Error(`O código de cupom "${data.code}" já existe.`);
+        }
+        throw error;
+    }
+}
+
+
 export async function getAllCoupons(): Promise<Coupon[]> {
   console.log("actions.ts: Fetching all coupons with Drizzle...");
   try {
@@ -1202,27 +1244,19 @@ export async function getAvailableDeliveryPersons(): Promise<DeliveryPerson[]> {
             .where(eq(deliveryPersonsTable.isActive, true))
             .orderBy(asc(deliveryPersonsTable.name));
 
-        // This functionality depends on orders.deliveryPersonId existing and being used.
-        // If the column is missing, this part will not filter correctly or might error.
-        // For now, if deliveryPersonId is not in ordersTable (Drizzle schema level), we return all active.
-        // const deliveryPersonIdExistsInSchema = 'deliveryPersonId' in ordersTable.config.columns; // This check is tricky
-
-        // console.log("actions.ts: Checking for busy delivery persons (this may fail if 'orders.delivery_person_id' is not correctly migrated)...");
-        // const ordersOutForDelivery = await db
-        //     .selectDistinct({ deliveryPersonId: ordersTable.deliveryPersonId })
-        //     .from(ordersTable)
-        //     .where(and(
-        //         eq(ordersTable.status, 'SaiuParaEntrega'),
-        //         isNotNull(ordersTable.deliveryPersonId)
-        //     ));
-
-        // const busyPersonIds = new Set(ordersOutForDelivery.map(o => o.deliveryPersonId).filter(id => id !== null) as string[]);
-        // const availablePersons = allActivePersons.filter(person => !busyPersonIds.has(person.id));
-        // console.log(`actions.ts: Found ${availablePersons.length} available (active and not on route) delivery persons.`);
-        // return availablePersons.map(p => ({ // Temporarily returning all active persons
-
-        console.warn("actions.ts: getAvailableDeliveryPersons is returning ALL active persons. Filtering by 'on-route' status is disabled due to likely missing 'orders.delivery_person_id' column.");
-        return allActivePersons.map(p => ({
+        const ordersOutForDelivery = await db
+            .selectDistinct({ deliveryPersonId: ordersTable.deliveryPersonId })
+            .from(ordersTable)
+            .where(and(
+                eq(ordersTable.status, 'SaiuParaEntrega'),
+                isNotNull(ordersTable.deliveryPersonId) 
+            ));
+            
+        const busyPersonIds = new Set(ordersOutForDelivery.map(o => o.deliveryPersonId).filter(id => id !== null) as string[]);
+        const availablePersons = allActivePersons.filter(person => !busyPersonIds.has(person.id));
+        
+        console.log(`actions.ts: Found ${availablePersons.length} available (active and not on active route) delivery persons.`);
+        return availablePersons.map(p => ({
             ...p,
             createdAt: p.createdAt!.toISOString(),
             updatedAt: p.updatedAt!.toISOString()
@@ -1248,7 +1282,7 @@ export async function updateDeliveryPerson(id: string, data: Partial<Omit<Delive
   console.log("actions.ts: Updating delivery person. ID:", id, "Data:", JSON.stringify(data, null, 2));
   try {
     const updateData = { ...data, updatedAt: new Date() };
-    const { id: _dataId, ...payload } = updateData as any;
+    const { id: _dataId, ...payload } = updateData as any; // Ensure 'id' is not in payload for set
     console.log("actions.ts: Delivery person update payload:", JSON.stringify(payload, null, 2));
 
     const [updatedPerson] = await db.update(deliveryPersonsTable)
@@ -1277,16 +1311,14 @@ export async function deleteDeliveryPerson(id: string): Promise<boolean> {
   try {
     let assignedOrdersCount = 0;
     try {
-        // This check is disabled until orders.deliveryPersonId is confirmed in schema
-        // const assignedOrdersResult = await db.select({ orderId: ordersTable.id })
-        //     .from(ordersTable)
-        //     .where(and(
-        //         eq(ordersTable.deliveryPersonId, id),
-        //         not(inArray(ordersTable.status, ['Entregue', 'Cancelado']))
-        //     ))
-        //     .limit(1);
-        // assignedOrdersCount = assignedOrdersResult.length;
-        console.warn("actions.ts: deleteDeliveryPerson - Check for assigned orders is currently disabled due to 'orders.delivery_person_id' issues.");
+        const assignedOrdersResult = await db.select({ orderId: ordersTable.id })
+            .from(ordersTable)
+            .where(and(
+                eq(ordersTable.deliveryPersonId, id),
+                not(inArray(ordersTable.status, ['Entregue', 'Cancelado']))
+            ))
+            .limit(1);
+        assignedOrdersCount = assignedOrdersResult.length;
     } catch (e) {
         console.warn("actions.ts: Could not check for assigned orders to delivery person (this might be due to 'orders.delivery_person_id' column issues). Proceeding with delete attempt carefully.", e);
     }
@@ -1307,3 +1339,4 @@ export async function deleteDeliveryPerson(id: string): Promise<boolean> {
     throw new Error("Unknown error deleting delivery person.");
   }
 }
+

@@ -49,7 +49,6 @@ const OrderDetailsModal: FC<OrderDetailsModalProps> = ({ order, isOpen, onClose,
     if (order.paymentType) {
       onUpdateOrder({ ...order, paymentStatus: "Pago" });
     }
-    // onClose(); // Fechar o modal é responsabilidade do componente pai após a atualização ser processada
   };
 
   const displayOrderId = order.id; 
@@ -141,13 +140,13 @@ const OrderDetailsModal: FC<OrderDetailsModalProps> = ({ order, isOpen, onClose,
           </div>
           
           <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="nfeLinkModal" className="text-right flex items-center gap-1"><FileText className="h-4 w-4"/>Link NFe</Label>
+            <Label htmlFor="nfeLinkModal" className="text-right flex items-center gap-1"><FileText className="h-4 w-4"/>NFe (Link ou Número)</Label>
             <Input 
               id="nfeLinkModal" 
               value={order.nfeLink || ''} 
               onChange={handleNfeLinkChange}
               className="col-span-3" 
-              placeholder="https://servidor.com/nfe/123.pdf"
+              placeholder="https://servidor.com/nfe/123.pdf ou Nº 12345"
               disabled={order.paymentStatus === "Pago" && order.status === "Entregue"}
             />
           </div>

@@ -14,8 +14,8 @@ import { ChartContainer, ChartTooltipContent } from '@/components/ui/chart';
 import type { ChartConfig } from '@/components/ui/chart';
 import { Badge } from '@/components/ui/badge';
 import SplitText from '@/components/common/SplitText';
-import { DatePickerWithRange, type DateRange } from '@/components/ui/date-picker-with-range'; // Import DatePickerWithRange
-import { addDays, format, subDays } from "date-fns";
+import { DatePickerWithRange, type DateRange } from '@/components/ui/date-picker-with-range'; 
+import { addDays, format, subDays, parseISO } from "date-fns";
 
 
 const PIZZERIA_NAME = "Pizzaria Planeta";
@@ -51,7 +51,7 @@ export default function AnalyticsDashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
-    from: subDays(new Date(), 29), // Default to last 30 days
+    from: subDays(new Date(), 29), 
     to: new Date(),
   });
   const { toast } = useToast();
@@ -85,7 +85,6 @@ export default function AnalyticsDashboardPage() {
   
   const handleDateRangeChange = (newRange: DateRange | undefined) => {
     setDateRange(newRange);
-    // fetchData will be called by useEffect due to dateRange dependency change
   };
 
 
@@ -169,7 +168,7 @@ export default function AnalyticsDashboardPage() {
                 textAlign='left'
             />
             <div className="flex flex-wrap gap-2 items-center">
-                <DatePickerWithRange date={dateRange} onDateChange={handleDateRangeChange} className="max-w-xs"/>
+                <DatePickerWithRange date={dateRange} onDateChange={handleDateRangeChange} className="max-w-xs" numberOfMonths={1} />
                 <Button onClick={handleManualRefresh} variant="outline" size="sm" disabled={isLoading}>
                     <RefreshCcw className={`mr-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
                     {isLoading ? "Atualizando..." : "Atualizar"}
@@ -255,7 +254,7 @@ export default function AnalyticsDashboardPage() {
                       <RechartsTooltip 
                         cursor={{ fill: 'hsl(var(--muted))' }}
                         content={<ChartTooltipContent indicator="dot" />}
-                        formatter={(value: number) => [formatCurrency(value), "Receita"]}
+                        formatter={(value: number | string) => [formatCurrency(value), "Receita"]}
                       />
                       <Bar dataKey="Receita" fill="var(--color-Receita)" radius={[4, 4, 0, 0]} />
                     </BarChart>
@@ -342,7 +341,7 @@ export default function AnalyticsDashboardPage() {
                 <CardDescription>
                     Total de entregas concluídas no período selecionado.
                     <br/>
-                    <span className="text-xs text-muted-foreground"> (Requer que a coluna 'delivery_person_id' na tabela 'orders' esteja corretamente migrada e populada para contagens precisas).</span>
+                    <span className="text-xs text-muted-foreground"> (Contagem precisa requer que a coluna 'delivery_person_id' na tabela 'orders' esteja corretamente migrada e populada).</span>
                 </CardDescription>
             </CardHeader>
             <CardContent>
@@ -357,7 +356,7 @@ export default function AnalyticsDashboardPage() {
                         ))}
                     </div>
                 ) : (
-                     <p className="text-muted-foreground text-center py-6">Nenhum entregador ativo ou nenhuma entrega registrada no período.</p>
+                     <p className="text-muted-foreground text-center py-6">Nenhum entregador ativo ou nenhuma entrega registrada no período. Verifique se há entregadores cadastrados e ativos, e se a coluna 'delivery_person_id' está correta no banco.</p>
                 )}
             </CardContent>
           </Card>

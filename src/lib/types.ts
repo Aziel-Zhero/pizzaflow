@@ -62,8 +62,8 @@ export interface Order {
   deliveredAt?: string;
   estimatedDeliveryTime?: string;
   deliveryPerson?: string; // Nome do entregador
-  deliveryPersonId?: string | null; // ID do entregador (FK)
-  deliveryPersonFull?: DeliveryPerson | null; // Objeto completo do entregador, se populado
+  // deliveryPersonId?: string | null; // ID do entregador (FK) // Temporarily commented out
+  // deliveryPersonFull?: DeliveryPerson | null; // Objeto completo do entregador, se populado // Temporarily commented out
   paymentType?: PaymentType | null; // Prisma enum will be mapped
   paymentStatus: PaymentStatus; // Prisma enum will be mapped
   notes?: string;

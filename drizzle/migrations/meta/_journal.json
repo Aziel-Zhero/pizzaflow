@@ -36,6 +36,13 @@
       "when": 1749924520754,
       "tag": "0004_solid_bruce_banner",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1749925437726,
+      "tag": "0005_stiff_tattoo",
+      "breakpoints": true
     }
   ]
 }

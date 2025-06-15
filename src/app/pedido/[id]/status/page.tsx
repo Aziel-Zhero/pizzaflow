@@ -19,9 +19,6 @@ import Confetti from 'react-confetti';
 
 const PIZZERIA_NAME = "Pizzaria Planeta";
 
-// Removido o cupom fixo daqui, pois pode não existir
-// const GENERIC_NEXT_PURCHASE_COUPON_CODE = "VOLTESEMPRE15"; 
-
 const statusDetails: Record<OrderStatus, { 
     message: string; 
     Icon: React.ElementType; 
@@ -72,8 +69,7 @@ const statusDetails: Record<OrderStatus, {
         colorClass: "border-green-500 bg-green-500/10",
         iconColorClass: "text-green-500",
         finalMessage: "Bom apetite!",
-        // Mensagem carismática genérica, sem cupom específico hardcoded
-        charismaticMessage: `Que alegria ter você como cliente! 🎉 Esperamos que sua pizza esteja incrível. Fique de olho em nossas promoções futuras!` 
+        charismaticMessage: `Que alegria ter você como cliente! 🎉 Esperamos que sua pizza esteja incrível. Agradecemos a preferência e volte sempre!` 
     },
     Cancelado: { 
         message: "Pedido Cancelado", 

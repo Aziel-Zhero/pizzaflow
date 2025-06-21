@@ -985,81 +985,48 @@ export async function fetchAddressFromCep(cep: string): Promise<CepAddress | nul
     console.error("actions.ts: CEP inválido fornecido para fetchAddressFromCep:", cep);
     return null;
   }
-  if (!GEOAPIFY_API_KEY) {
-    console.error("actions.ts: Geoapify API Key não configurada para busca de CEP.");
-    return null;
-  }
-  console.log(`actions.ts: Buscando CEP ${cleanedCep} na Geoapify...`);
+  
+  console.log(`actions.ts: Buscando CEP ${cleanedCep} na API ViaCEP...`);
   try {
-    const url = `https://api.geoapify.com/v1/geocode/search?postcode=${cleanedCep}&type=postcode&country=br&lang=pt&limit=1&format=json&apiKey=${GEOAPIFY_API_KEY}`;
-    console.log(`actions.ts: Geoapify CEP Search URL (key masked): ${url.replace(GEOAPIFY_API_KEY, "GEOAPIFY_KEY_HIDDEN")}`);
+    const url = `https://viacep.com.br/ws/${cleanedCep}/json/`;
+    console.log(`actions.ts: ViaCEP URL: ${url}`);
     const response = await fetch(url);
-    const responseBodyText = await response.text();
-    console.log(`actions.ts: fetchAddressFromCep RAW response for CEP ${cleanedCep}:`, responseBodyText);
 
     if (!response.ok) {
-        console.error(`actions.ts: Geoapify Geocoding API (CEP) retornou erro ${response.status}. CEP: ${cleanedCep}. Body: ${responseBodyText}`);
+        console.error(`actions.ts: ViaCEP API retornou erro ${response.status}. CEP: ${cleanedCep}.`);
         return null;
     }
-    const data = JSON.parse(responseBodyText) as any;
-    
-    if (data.results && data.results.length > 0) {
-      const properties = data.results[0];
-      console.log(`actions.ts: Geoapify CEP ${cleanedCep} encontrado. Propriedades:`, JSON.stringify(properties, null, 2));
 
-      const address: CepAddress = {
-        cep: properties.postcode || cleanedCep,
-        street: properties.street || properties.road || '', 
-        number: properties.housenumber || '', 
-        neighborhood: properties.suburb || properties.district || '', 
-        city: properties.city || '',
-        state: properties.state_code || properties.state || '', 
-        country_code: properties.country_code || 'BR',
-        lat: properties.lat,
-        lon: properties.lon,
-        address_line1: properties.address_line1, 
-        address_line2: properties.address_line2,
-      };
-      
-      // Tentar extrair bairro, cidade, estado de address_line2 se não preenchidos individualmente
-      if (address.address_line2) {
-          const parts = address.address_line2.split(',').map(p => p.trim());
-          if (parts.length > 0 && !address.neighborhood) address.neighborhood = parts[0];
-          if (parts.length > 1 && !address.city) {
-              const cityAndState = parts[1].split(' - ');
-              address.city = cityAndState[0];
-              if (cityAndState.length > 1 && !address.state) address.state = cityAndState[1];
-          }
-           if (parts.length > 2 && !address.state) { 
-             const stateMatch = parts[parts.length-1].match(/^([A-Z]{2})$/);
-             if(stateMatch && !address.state) address.state = stateMatch[1];
-          }
-      }
-      // Se a rua não veio, tentar pegar de address_line1 e remover o número se houver
-      if (!address.street && address.address_line1) {
-        address.street = address.address_line1.replace(/,?\s*\d+[A-Za-z]*?(-[A-Za-z0-9]+)?$/, '').trim();
-      }
+    const data = await response.json();
+    console.log(`actions.ts: ViaCEP response for CEP ${cleanedCep}:`, JSON.stringify(data, null, 2));
 
-
-      let fullAddressParts = [];
-      if (address.street) fullAddressParts.push(address.street);
-      // Não adicionar número aqui, pois o usuário preencherá
-      if (address.neighborhood) fullAddressParts.push(address.neighborhood);
-      if (address.city) fullAddressParts.push(address.city);
-      if (address.state) fullAddressParts.push(address.state);
-      address.fullAddress = fullAddressParts.join(', ').replace(/, $/, ''); // Endereço sem número para exibir/confirmar
-      
-      console.log("actions.ts: Parsed address from Geoapify (before user number):", address);
-      return address;
-    } else {
-      console.warn(`actions.ts: CEP ${cleanedCep} não encontrado ou sem resultados ('data.results' ausente/vazio) na Geoapify. Resposta completa:`, data);
+    if (data.erro) {
+      console.warn(`actions.ts: CEP ${cleanedCep} não encontrado na ViaCEP.`);
       return null;
     }
 
+    const address: CepAddress = {
+      cep: data.cep,
+      street: data.logradouro,
+      neighborhood: data.bairro,
+      city: data.localidade,
+      state: data.uf,
+    };
+
+    let fullAddressParts = [];
+    if (address.street) fullAddressParts.push(address.street);
+    if (address.neighborhood) fullAddressParts.push(address.neighborhood);
+    if (address.city) fullAddressParts.push(address.city);
+    if (address.state) fullAddressParts.push(address.state);
+    address.fullAddress = fullAddressParts.join(', ').replace(/, $/, '');
+
+    console.log("actions.ts: Endereço parseado da ViaCEP:", address);
+    return address;
+
   } catch (error) {
-    console.error("actions.ts: Erro ao buscar CEP na Geoapify:", error);
+    console.error(`actions.ts: Erro ao buscar CEP ${cleanedCep} na ViaCEP:`, error);
     if (error instanceof Error && (error.message.includes('fetch') || error.message.includes('NetworkError'))) {
-         throw new Error("Erro de rede ao buscar CEP. Verifique sua conexão e a chave da API Geoapify.");
+         throw new Error("Erro de rede ao buscar CEP. Verifique sua conexão.");
     }
     return null;
   }
@@ -1364,3 +1331,4 @@ export async function deleteDeliveryPerson(id: string): Promise<boolean> {
   }
 }
 
+    
